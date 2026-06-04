@@ -16,7 +16,9 @@ PacletObject[
         "Root" -> "Kernel",
         "Context" -> {"ArnoudBuzing`AntennaLink`"},
         "Symbols" -> {
-          "ArnoudBuzing`AntennaLink`AntennaSolve"
+          "ArnoudBuzing`AntennaLink`AntennaSolve",
+          "ArnoudBuzing`AntennaLink`AntennaSolveMemory",
+          "ArnoudBuzing`AntennaLink`AntennaParseOutput"
         }
       },
       {"LibraryLink"},

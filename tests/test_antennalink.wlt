@@ -1,8 +1,8 @@
 VerificationTest[
   PacletDirectoryLoad[FileNameJoin[{DirectoryName[$TestFileName, 2], "AntennaLink"}]];
   Get[FileNameJoin[{DirectoryName[$TestFileName, 2], "AntennaLink", "Kernel", "AntennaLink.wl"}]];
-  Context[AntennaSolve],
-  "ArnoudBuzing`AntennaLink`",
+  NameQ["ArnoudBuzing`AntennaLink`AntennaSolve"],
+  True,
   TestID -> "antennalink-context-load"
 ]
 
@@ -28,4 +28,15 @@ EN
   ],
   {FileNameJoin[{DirectoryName[$TestFileName], "dipole.out"}], True},
   TestID -> "antennalink-solve-dipole"
+]
+
+VerificationTest[
+  Module[{outFile, res},
+    outFile = FileNameJoin[{DirectoryName[$TestFileName], "dipole.out"}];
+    res = AntennaParseOutput[outFile];
+    
+    {Keys[res], Length[res["Currents"]]}
+  ],
+  {{"InputParameters", "Currents"}, 11},
+  TestID -> "antennalink-parse-output"
 ]
