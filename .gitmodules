@@ -1,0 +1,3 @@
+[submodule "src/nec2c"]
+	path = src/nec2c
+	url = https://github.com/KJ7LNW/nec2c
