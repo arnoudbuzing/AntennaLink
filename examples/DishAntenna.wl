@@ -39,9 +39,15 @@ numRings    = 6;      (* concentric rings                                     *)
 wireRadius  = 0.002;  (* meters                                               *)
 
 (* --- Build the reflector wire grid ----------------------------------------*)
-dishWires = AntennaParabolicReflector[
-  focalLength, dishRadius, numRibs, numRings, wireRadius
-];
+(* AntennaParabolicReflector also accepts positional arguments; the
+   association form is used here for readability. *)
+dishWires = AntennaParabolicReflector[<|
+  "FocalLength" -> focalLength,
+  "DishRadius"  -> dishRadius,
+  "NumRibs"     -> numRibs,
+  "NumRings"    -> numRings,
+  "WireRadius"  -> wireRadius
+|>];
 
 (* --- Add a half-wave dipole feed at the focal point ------------------------*)
 (* The dipole lies along X, centered on the focus, with its own tag (99) so it
