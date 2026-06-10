@@ -84,6 +84,11 @@ DLLEXPORT int nec2_init(WolframLibraryData libData, mint Argc, MArgument *Args, 
     gnd.iperf = 0;
     gnd.zrati = CPLX_10;
     gnd.ifar = -1;
+    /* Reset the matrix-size flag so nec2_geometry_end recomputes netcx.neq for
+       the current geometry. Without this, a stale neq from a previous (larger)
+       geometry drives the matrix fill past the freshly allocated arrays and
+       segfaults. Matches upstream nec2c (main.c sets matpar.imat = 0 per run). */
+    matpar.imat = 0;
     output_fp = stdout;
     plot_fp = stdout;
     return LIBRARY_NO_ERROR;
@@ -185,7 +190,9 @@ DLLEXPORT int nec2_geometry_end(WolframLibraryData libData, mint Argc, MArgument
 DLLEXPORT int nec2_set_freq(WolframLibraryData libData, mint Argc, MArgument *Args, MArgument Res) {
     double mhz = MArgument_getReal(Args[0]);
     save.fmhz = mhz;
-    data.wlam = TP / (CVEL / mhz);
+    /* Wavelength in meters, matching upstream nec2c (main.c: data.wlam = CVEL/fmhz).
+       The geometry scale factor below is fr = 1/wlam = mhz/CVEL. */
+    data.wlam = CVEL / mhz;
     
     if (data.n != 0) {
         double fr = mhz / CVEL;
