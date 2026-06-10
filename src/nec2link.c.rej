@@ -1,8 +1,0 @@
-@@ -21,6 +21,7 @@
- #include "nec2c/nec2c.h"
- 
- /* Link to NEC2 global state */
-+extern double wlam;
- extern save_t save;
- extern data_t data;
- extern dataj_t dataj;
