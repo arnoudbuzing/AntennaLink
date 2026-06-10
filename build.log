@@ -1,0 +1,4 @@
+Building libnec2link...
+
+CreateLibrary::cmperr: Compile error: clang: error: linker command failed with exit code 1 (use -v to see invocation)
+Build failed!

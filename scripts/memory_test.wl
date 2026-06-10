@@ -1,19 +1,9 @@
-Print["Loading paclet..."];
 pacletDir = FileNameJoin[{DirectoryName[$InputFileName, 2], "AntennaLink"}];
 PacletDirectoryLoad[pacletDir];
 Get[FileNameJoin[{pacletDir, "Kernel", "AntennaLink.wl"}]];
 
-Print["Defining params..."];
-wires = {
-  <|"Segments" -> 11, "Tag" -> 1, "P1" -> {0, 0, -0.25}, "P2" -> {0, 0, 0.25}, "Radius" -> 0.001|>
-};
+helixWires = AntennaHelix[0.08, 0.10, 5.0, 0.001, 16];
+sol = AntennaSolveMemory[helixWires, 300.0, {<|"Tag" -> 1, "Segment" -> 1, "Voltage" -> 1.0|>}];
+plot = AntennaPlotGeometry[sol];
 
-freq = 299.79;
-
-excitations = {
-  <|"Tag" -> 1, "Segment" -> 6, "Voltage" -> 1.0 + 0.0 * I|>
-};
-
-Print["Running memory solve..."];
-res = ArnoudBuzing`AntennaLink`AntennaSolveMemory[wires, freq, excitations];
-Print["Result: ", res];
+Print["Sphere primitive in plot: ", InputForm[Cases[plot, _Sphere, Infinity]]];

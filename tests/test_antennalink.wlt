@@ -37,6 +37,6 @@ VerificationTest[
     
     {Keys[res], Length[res["Currents"]]}
   ],
-  {{"InputParameters", "Currents"}, 11},
+  {{"InputParameters", "Currents", "RadiationPattern"}, 11},
   TestID -> "antennalink-parse-output"
 ]

@@ -18,7 +18,14 @@ PacletObject[
         "Symbols" -> {
           "ArnoudBuzing`AntennaLink`AntennaSolve",
           "ArnoudBuzing`AntennaLink`AntennaSolveMemory",
-          "ArnoudBuzing`AntennaLink`AntennaParseOutput"
+          "ArnoudBuzing`AntennaLink`AntennaParseOutput",
+          "ArnoudBuzing`AntennaLink`AntennaFarFieldMemory",
+          "ArnoudBuzing`AntennaLink`AntennaYagiUda",
+          "ArnoudBuzing`AntennaLink`AntennaHelix",
+          "ArnoudBuzing`AntennaLink`AntennaParabolicReflector",
+          "ArnoudBuzing`AntennaLink`AntennaSweepMemory",
+          "ArnoudBuzing`AntennaLink`AntennaPlotGeometry",
+          "ArnoudBuzing`AntennaLink`AntennaPlotPattern3D"
         }
       },
       {"LibraryLink"},

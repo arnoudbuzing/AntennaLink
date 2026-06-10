@@ -1,0 +1,31 @@
+<|
+    "Files"
+    ->
+    {
+        <|
+            "File"
+            ->
+            File[
+                "Kernel/AntennaLink.wl"
+            ]
+            ,
+            "Hash"
+            ->
+            "ebf97e8dde7d6b99d226fda839315ad77e60de47ba01fc45c1982e4c67329010"
+                
+        |>
+        ,
+        <|
+            "File"
+            ->
+            File[
+                "LibraryResources/MacOSX-ARM64/libnec2link.dylib"
+            ]
+            ,
+            "Hash"
+            ->
+            "1585d972ae1afdbf4ef5bec5ce05e2c66ffdb26f801d21dae6477f9d61a0e542"
+                
+        |>
+    }
+|>
