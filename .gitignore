@@ -1,0 +1,21 @@
+# Build artifacts
+AntennaLink/build/
+*.paclet
+build.log
+
+# Patch / merge leftovers
+*.orig
+*.rej
+
+# Scratch experiments (keep real suites under tests/ and scripts/)
+/test_*.wl
+/dipole.nec
+/*.patch
+
+# Compiled libraries are committed under AntennaLink/LibraryResources/<SystemID>/,
+# but ignore stray local build output elsewhere
+/src/nec2link.c.orig
+/src/nec2link.c.rej
+
+# OS / editor cruft
+.DS_Store

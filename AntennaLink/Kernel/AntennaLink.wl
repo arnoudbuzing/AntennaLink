@@ -9,7 +9,7 @@ AntennaFarFieldMemory::usage = "AntennaFarFieldMemory[wires, freq, excitations, 
 AntennaYagiUda::usage = "AntennaYagiUda[reflectorLength, reflectorSpacing, drivenLength, directorLengths, directorSpacings, wireRadius, segments] or AntennaYagiUda[assoc] creates a structured list of wire associations representing a Yagi-Uda antenna aligned along the Y-axis."
 AntennaHelix::usage = "AntennaHelix[radius, pitch, turns, wireRadius, segmentsPerTurn] or AntennaHelix[assoc] creates a structured list of wire associations representing a helical antenna along the Z-axis."
 AntennaParabolicReflector::usage = "AntennaParabolicReflector[focalLength, dishRadius, numRibs, numRings, wireRadius] or AntennaParabolicReflector[assoc] creates a structured list of wire associations representing a wire-grid parabolic reflector dish vertexed at the origin."
-AntennaSweepMemory::usage = "AntennaSweepMemory[wires, freqSpec, excitations] sweeps the frequency list or range freqSpec to compute input impedance, S11, and VSWR in memory."
+AntennaSweepMemory::usage = "AntennaSweepMemory[wires, freqSpec, excitations] sweeps the frequencies given by freqSpec (a single frequency or an explicit list, e.g. Range[fmin, fmax, step]) to compute input impedance, S11, and VSWR in memory."
 AntennaPlotGeometry::usage = "AntennaPlotGeometry[wires] plots the 3D geometry of the antenna. AntennaPlotGeometry[solveResult] plots the geometry colored by computed segment currents."
 AntennaPlotPattern3D::usage = "AntennaPlotPattern3D[farFieldData] plots the 3D radiation pattern. AntennaPlotPattern3D[solveResult] plots the radiation pattern and overlays the physical antenna geometry at the center."
 
@@ -49,7 +49,7 @@ AntennaSolve[inputFile_String, outputFile_String] := Module[
 
 AntennaSolve::nolib = "The libnec2link library could not be found.";
 AntennaSolve::err = "The NEC2 solver returned an error code: `1`.";
-AntennaSweepMemory::freq = "The frequency specification `1` must be a numeric frequency, a list of frequencies, or a {min, max, step} range.";
+AntennaSweepMemory::freq = "The frequency specification `1` must be a numeric frequency or an explicit list of frequencies (e.g. Range[fmin, fmax, step]).";
 
 
 AntennaParseOutput[outFile_String] := Module[
@@ -138,54 +138,70 @@ setupGround[groundSpec_] := Module[
   If[Lookup[groundSpec, "ConnectWires", True], 1, 0]
 ]
 
-Options[AntennaSolveMemory] = {"Ground" -> None};
+(* Whether wires touching Z=0 should connect to the ground plane. *)
+groundConnectFlag[groundSpec_] :=
+  If[groundSpec === None || !AssociationQ[groundSpec] || !Lookup[groundSpec, "ConnectWires", True], 0, 1];
 
-AntennaSolveMemory[wires_List, freq_?NumericQ, excitations_List, opts:OptionsPattern[]] := Module[
-  {result, currentsTensor, currentData, groundSpec, ignd},
-  
-  If[$LibraryFile === $Failed,
-    Message[AntennaSolve::nolib];
-    Return[$Failed]
-  ];
-  
-  groundSpec = OptionValue[AntennaSolveMemory, {opts}, "Ground"];
-  ignd = If[groundSpec === None || !AssociationQ[groundSpec] || !Lookup[groundSpec, "ConnectWires", True], 0, 1];
-  
+(* Shared in-memory setup for the solver entry points: initialize, load the
+   wire geometry, set the frequency, configure ground, and apply excitations.
+   Returns "OK" on success, or a status string naming the stage that failed.
+   The caller is responsible for invoking nec2LinkExecute[] afterward. *)
+setupGeometry[wires_List, freq_?NumericQ, excitations_List, groundSpec_] := Module[
+  {result},
+
   result = nec2LinkInit[];
-  If[result =!= 0, Message[AntennaSolve::err, result]; Return[$Failed]];
-  
+  If[result =!= 0, Return["InitFailed"]];
+
   Scan[
     Function[wire,
       nec2LinkAddWire[
         wire["Segments"], wire["Tag"],
-        Developer`ToPackedArray[N[wire["P1"]]], 
-        Developer`ToPackedArray[N[wire["P2"]]], 
+        Developer`ToPackedArray[N[wire["P1"]]],
+        Developer`ToPackedArray[N[wire["P2"]]],
         N[wire["Radius"]]
       ]
     ],
     wires
   ];
-  
-  result = nec2LinkGeometryEnd[ignd];
-  If[result =!= 0, Message[AntennaSolve::err, result]; Return[$Failed]];
-  
+
+  result = nec2LinkGeometryEnd[groundConnectFlag[groundSpec]];
+  If[result =!= 0, Return["GeometryEndFailed"]];
+
   result = nec2LinkSetFreq[N[freq]];
-  If[result =!= 0, Message[AntennaSolve::err, result]; Return[$Failed]];
-  
+  If[result =!= 0, Return["SetFreqFailed"]];
+
   setupGround[groundSpec];
-  
+
   Scan[
     Function[ex,
       nec2LinkSetExcitation[
-        ex["Tag"], ex["Segment"], 
+        ex["Tag"], ex["Segment"],
         Re[ex["Voltage"]], Im[ex["Voltage"]]
       ]
     ],
     excitations
   ];
-  
+
+  "OK"
+]
+
+Options[AntennaSolveMemory] = {"Ground" -> None};
+
+AntennaSolveMemory[wires_List, freq_?NumericQ, excitations_List, opts:OptionsPattern[]] := Module[
+  {status, currentsTensor, currentData, groundSpec},
+
+  If[$LibraryFile === $Failed,
+    Message[AntennaSolve::nolib];
+    Return[$Failed]
+  ];
+
+  groundSpec = OptionValue[AntennaSolveMemory, {opts}, "Ground"];
+
+  status = setupGeometry[wires, freq, excitations, groundSpec];
+  If[status =!= "OK", Message[AntennaSolve::err, status]; Return[$Failed]];
+
   currentsTensor = nec2LinkExecute[];
-  
+
   If[Length[currentsTensor] > 0,
     currentData = Dataset[AssociationThread[
       {"CurrentReal", "CurrentImag", "X", "Y", "Z"},
@@ -201,49 +217,18 @@ AntennaSolveMemory[wires_List, freq_?NumericQ, excitations_List, opts:OptionsPat
 Options[AntennaFarFieldMemory] = {"Ground" -> None};
 
 AntennaFarFieldMemory[wires_List, freq_?NumericQ, excitations_List, thetaList_List, phiList_List, opts:OptionsPattern[]] := Module[
-  {result, currentsTensor, currentsData, farFieldTensor, farFieldData, thetaRad, phiRad, groundSpec, ignd},
-  
+  {status, currentsTensor, currentsData, farFieldTensor, farFieldData, thetaRad, phiRad, groundSpec},
+
   If[$LibraryFile === $Failed,
     Message[AntennaSolve::nolib];
     Return[$Failed]
   ];
-  
+
   groundSpec = OptionValue[AntennaFarFieldMemory, {opts}, "Ground"];
-  ignd = If[groundSpec === None || !AssociationQ[groundSpec] || !Lookup[groundSpec, "ConnectWires", True], 0, 1];
-  
-  result = nec2LinkInit[];
-  If[result =!= 0, Message[AntennaSolve::err, result]; Return[$Failed]];
-  
-  Scan[
-    Function[wire,
-      nec2LinkAddWire[
-        wire["Segments"], wire["Tag"],
-        Developer`ToPackedArray[N[wire["P1"]]], 
-        Developer`ToPackedArray[N[wire["P2"]]], 
-        N[wire["Radius"]]
-      ]
-    ],
-    wires
-  ];
-  
-  result = nec2LinkGeometryEnd[ignd];
-  If[result =!= 0, Message[AntennaSolve::err, result]; Return[$Failed]];
-  
-  result = nec2LinkSetFreq[N[freq]];
-  If[result =!= 0, Message[AntennaSolve::err, result]; Return[$Failed]];
-  
-  setupGround[groundSpec];
-  
-  Scan[
-    Function[ex,
-      nec2LinkSetExcitation[
-        ex["Tag"], ex["Segment"], 
-        Re[ex["Voltage"]], Im[ex["Voltage"]]
-      ]
-    ],
-    excitations
-  ];
-  
+
+  status = setupGeometry[wires, freq, excitations, groundSpec];
+  If[status =!= "OK", Message[AntennaSolve::err, status]; Return[$Failed]];
+
   currentsTensor = nec2LinkExecute[];
   If[Length[currentsTensor] == 0, Return[$Failed]];
   
@@ -421,17 +406,16 @@ AntennaParabolicReflector[focalLength_, dishRadius_, numRibs_, numRings_, wireRa
 Options[AntennaSweepMemory] = {"Ground" -> None, "ReferenceImpedance" -> 50.0};
 
 AntennaSweepMemory[wires_List, freqSpec_, excitations_List, opts:OptionsPattern[]] := Module[
-  {freqList, z0, results, groundSpec, ignd},
-  
+  {freqList, z0, results, groundSpec},
+
   If[$LibraryFile === $Failed,
     Message[AntennaSolve::nolib];
     Return[$Failed]
   ];
-  
+
   z0 = OptionValue[AntennaSweepMemory, {opts}, "ReferenceImpedance"];
   groundSpec = OptionValue[AntennaSweepMemory, {opts}, "Ground"];
-  ignd = If[groundSpec === None || !AssociationQ[groundSpec] || !Lookup[groundSpec, "ConnectWires", True], 0, 1];
-  
+
   freqList = Switch[freqSpec,
     _List,
       N[freqSpec],
@@ -443,84 +427,45 @@ AntennaSweepMemory[wires_List, freqSpec_, excitations_List, opts:OptionsPattern[
   ];
   
   results = Table[
-    Module[{result, currents, inputParams, tag, seg, voltage, current, zin, pwr, gamma, s11, vswr, output},
-      result = nec2LinkInit[];
-      If[result =!= 0,
-        output = <|"Frequency" -> f, "Error" -> "InitFailed"|>,
-        
-        Scan[
-          Function[wire,
-            nec2LinkAddWire[
-              wire["Segments"], wire["Tag"],
-              Developer`ToPackedArray[N[wire["P1"]]], 
-              Developer`ToPackedArray[N[wire["P2"]]], 
-              N[wire["Radius"]]
-            ]
-          ],
-          wires
-        ];
-        
-        result = nec2LinkGeometryEnd[ignd];
-        If[result =!= 0,
-          output = <|"Frequency" -> f, "Error" -> "GeometryEndFailed"|>,
-          
-          result = nec2LinkSetFreq[f];
-          If[result =!= 0,
-            output = <|"Frequency" -> f, "Error" -> "SetFreqFailed"|>,
-            
-            setupGround[groundSpec];
-            
-            Scan[
-              Function[ex,
-                nec2LinkSetExcitation[
-                  ex["Tag"], ex["Segment"], 
-                  Re[ex["Voltage"]], Im[ex["Voltage"]]
-                ]
-              ],
-              excitations
-            ];
-            
-            currents = nec2LinkExecute[];
-            If[Length[currents] == 0,
-              output = <|"Frequency" -> f, "Error" -> "ExecuteFailed"|>,
-              
-              inputParams = nec2LinkGetInputParameters[];
-              If[Length[inputParams] > 0,
-                With[{row = inputParams[[1]]},
-                  tag = Round[row[[1]]];
-                  seg = Round[row[[2]]];
-                  voltage = row[[3]] + I * row[[4]];
-                  current = row[[5]] + I * row[[6]];
-                  zin = row[[7]] + I * row[[8]];
-                  pwr = row[[9]];
-                  
-                  gamma = (zin - z0) / (zin + z0);
-                  s11 = If[Abs[gamma] > 10^-20, 20.0 * Log10[Abs[gamma]], -999.99];
-                  vswr = If[Abs[1.0 - Abs[gamma]] > 10^-20, (1.0 + Abs[gamma]) / (1.0 - Abs[gamma]), Infinity];
-                  
-                  output = <|
-                    "Frequency" -> f,
-                    "Tag" -> tag,
-                    "Segment" -> seg,
-                    "Voltage" -> voltage,
-                    "Current" -> current,
-                    "ZInput" -> zin,
-                    "Power" -> pwr,
-                    "S11" -> s11,
-                    "VSWR" -> vswr
-                  |>
-                ],
-                output = <|"Frequency" -> f, "Error" -> "NoExcitations"|>
-              ]
-            ]
+    Module[{status, currents, inputParams, tag, seg, voltage, current, zin, pwr, gamma, s11, vswr},
+      status = setupGeometry[wires, f, excitations, groundSpec];
+      Which[
+        status =!= "OK",
+          <|"Frequency" -> f, "Error" -> status|>,
+        Length[currents = nec2LinkExecute[]] == 0,
+          <|"Frequency" -> f, "Error" -> "ExecuteFailed"|>,
+        Length[inputParams = nec2LinkGetInputParameters[]] == 0,
+          <|"Frequency" -> f, "Error" -> "NoExcitations"|>,
+        True,
+          With[{row = inputParams[[1]]},
+            tag = Round[row[[1]]];
+            seg = Round[row[[2]]];
+            voltage = row[[3]] + I * row[[4]];
+            current = row[[5]] + I * row[[6]];
+            zin = row[[7]] + I * row[[8]];
+            pwr = row[[9]];
+
+            gamma = (zin - z0) / (zin + z0);
+            s11 = If[Abs[gamma] > 10^-20, 20.0 * Log10[Abs[gamma]], -999.99];
+            vswr = If[Abs[1.0 - Abs[gamma]] > 10^-20, (1.0 + Abs[gamma]) / (1.0 - Abs[gamma]), Infinity];
+
+            <|
+              "Frequency" -> f,
+              "Tag" -> tag,
+              "Segment" -> seg,
+              "Voltage" -> voltage,
+              "Current" -> current,
+              "ZInput" -> zin,
+              "Power" -> pwr,
+              "S11" -> s11,
+              "VSWR" -> vswr
+            |>
           ]
-        ]
-      ];
-      output
+      ]
     ],
     {f, freqList}
   ];
-  
+
   Dataset[results]
 ]
 

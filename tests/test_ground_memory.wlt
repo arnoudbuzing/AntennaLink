@@ -21,9 +21,10 @@ VerificationTest[
       excitations, 
       "Ground" -> <|"Type" -> "Perfect", "ConnectWires" -> True|>
     ];
-    {Head[res], Length[res], Chop[Normal[res][[1]]["ZInput"]]}
+    {Head[res], Length[res],
+     Abs[Normal[res][[1]]["ZInput"] - (41.8164 + 24.5308*I)] < 0.05}
   ],
-  {Dataset, 1, 41.816361162911925 + 24.530762739536993*I},
+  {Dataset, 1, True},
   TestID -> "perfect-ground-monopole"
 ]
 
@@ -42,9 +43,10 @@ VerificationTest[
       excitations, 
       "Ground" -> <|"Type" -> "Sommerfeld", "Dielectric" -> 15.0, "Conductivity" -> 0.01, "ConnectWires" -> True|>
     ];
-    {Head[res], Length[res], Chop[Normal[res][[1]]["ZInput"]]}
+    {Head[res], Length[res],
+     Abs[Normal[res][[1]]["ZInput"] - (54.6373 - 29.6210*I)] < 0.05}
   ],
-  {Dataset, 1, 54.63733471111652 - 29.62101443434472*I},
+  {Dataset, 1, True},
   TestID -> "sommerfeld-ground-monopole"
 ]
 
@@ -63,8 +65,9 @@ VerificationTest[
       excitations, 
       "Ground" -> <|"Type" -> "Realistic", "Dielectric" -> 15.0, "Conductivity" -> 0.01, "ConnectWires" -> True|>
     ];
-    {Head[res], Length[res], Chop[Normal[res][[1]]["ZInput"]]}
+    {Head[res], Length[res],
+     Abs[Normal[res][[1]]["ZInput"] - (34.6125 - 192.8183*I)] < 0.05}
   ],
-  {Dataset, 1, 34.61249665565982 - 192.8182814190516*I},
+  {Dataset, 1, True},
   TestID -> "realistic-ground-monopole"
 ]
