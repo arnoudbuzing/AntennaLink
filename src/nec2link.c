@@ -68,8 +68,52 @@ DLLEXPORT int run_nec2(WolframLibraryData libData, mint Argc, MArgument *Args, M
 /* Memory Interface                                                          */
 /* ========================================================================= */
 
+/* Free every dynamically allocated nec2c buffer and reset its pointer to NULL.
+   Mirrors the pointer set in Null_Pointers(), but actually releases the memory
+   instead of merely orphaning it. nec2_init calls this before each solve, so a
+   long sweep (one solve per frequency) no longer leaks the previous solve's
+   working set. Safe on the first call: these globals are zero-initialized, so
+   every pointer is NULL and free_ptr() is a no-op. */
+static void nec2_free_all(void) {
+    free_ptr((void *)&crnt.air);  free_ptr((void *)&crnt.aii);
+    free_ptr((void *)&crnt.bir);  free_ptr((void *)&crnt.bii);
+    free_ptr((void *)&crnt.cir);  free_ptr((void *)&crnt.cii);
+    free_ptr((void *)&crnt.cur);
+
+    free_ptr((void *)&data.x);    free_ptr((void *)&data.y);    free_ptr((void *)&data.z);
+    free_ptr((void *)&data.x1);   free_ptr((void *)&data.y1);   free_ptr((void *)&data.z1);
+    free_ptr((void *)&data.x2);   free_ptr((void *)&data.y2);   free_ptr((void *)&data.z2);
+    free_ptr((void *)&data.si);   free_ptr((void *)&data.bi);
+    free_ptr((void *)&data.sab);  free_ptr((void *)&data.cab);  free_ptr((void *)&data.salp);
+    free_ptr((void *)&data.itag); free_ptr((void *)&data.icon1);free_ptr((void *)&data.icon2);
+    free_ptr((void *)&data.px);   free_ptr((void *)&data.py);   free_ptr((void *)&data.pz);
+    free_ptr((void *)&data.t1x);  free_ptr((void *)&data.t1y);  free_ptr((void *)&data.t1z);
+    free_ptr((void *)&data.t2x);  free_ptr((void *)&data.t2y);  free_ptr((void *)&data.t2z);
+    free_ptr((void *)&data.pbi);  free_ptr((void *)&data.psalp);
+
+    free_ptr((void *)&netcx.ntyp); free_ptr((void *)&netcx.iseg1); free_ptr((void *)&netcx.iseg2);
+    free_ptr((void *)&netcx.x11r); free_ptr((void *)&netcx.x11i);
+    free_ptr((void *)&netcx.x12r); free_ptr((void *)&netcx.x12i);
+    free_ptr((void *)&netcx.x22r); free_ptr((void *)&netcx.x22i);
+
+    free_ptr((void *)&save.ip);
+
+    free_ptr((void *)&segj.jco); free_ptr((void *)&segj.ax);
+    free_ptr((void *)&segj.bx);  free_ptr((void *)&segj.cx);
+
+    free_ptr((void *)&smat.ssx);
+
+    free_ptr((void *)&vsorc.isant); free_ptr((void *)&vsorc.ivqd); free_ptr((void *)&vsorc.iqds);
+    free_ptr((void *)&vsorc.vqd);   free_ptr((void *)&vsorc.vqds); free_ptr((void *)&vsorc.vsant);
+
+    free_ptr((void *)&yparm.y11a);  free_ptr((void *)&yparm.y12a);
+    free_ptr((void *)&yparm.ncseg); free_ptr((void *)&yparm.nctag);
+
+    free_ptr((void *)&zload.zarray);
+}
+
 DLLEXPORT int nec2_init(WolframLibraryData libData, mint Argc, MArgument *Args, MArgument Res) {
-    Null_Pointers();
+    nec2_free_all();
     data.n = 0;
     data.np = 0;
     data.m = 0;
@@ -484,5 +528,11 @@ DLLEXPORT int WolframLibrary_initialize(WolframLibraryData libData) {
 }
 
 DLLEXPORT void WolframLibrary_uninitialize(WolframLibraryData libData) {
+    nec2_free_all();
+    /* Sommerfeld ground grid buffers persist across solves (reused when
+       allocated), so release them only on unload. */
+    free_ptr((void *)&ggrid.ar1);
+    free_ptr((void *)&ggrid.ar2);
+    free_ptr((void *)&ggrid.ar3);
     return;
 }
