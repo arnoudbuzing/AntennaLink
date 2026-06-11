@@ -6,6 +6,11 @@
 
 With `AntennaLink`, you can perform electromagnetic geometry generation, parameter sweeps, ground-plane modeling, and interactive 3D visualizations directly from your Wolfram Language session.
 
+> **New to antennas?** [`TUTORIAL.md`](TUTORIAL.md) teaches how antennas work
+> from first principles — current distribution, impedance, resonance, radiation
+> patterns, gain, polarization, Yagis, and ground planes — using runnable
+> AntennaLink experiments. No prior antenna theory assumed.
+
 ---
 
 ## Installation & Setup
