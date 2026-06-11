@@ -1,0 +1,53 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  build-and-test:
+    name: Build library and run test suite
+    runs-on: ubuntu-latest
+
+    # The Wolfram Engine image provides wolframscript + the WolframLibrary
+    # headers needed to compile the LibraryLink binary. It is free, but each
+    # run needs an on-demand license: create a free Wolfram Engine entitlement
+    # (https://www.wolfram.com/engine/) and store its ID in a repository secret
+    # named WOLFRAMSCRIPT_ENTITLEMENTID (Settings > Secrets and variables >
+    # Actions). Without it, wolframscript cannot acquire a license and the job
+    # fails at the license-check step below.
+    container:
+      image: wolframresearch/wolframengine:latest
+      options: --user root
+
+    env:
+      WOLFRAMSCRIPT_ENTITLEMENTID: ${{ secrets.WOLFRAMSCRIPT_ENTITLEMENTID }}
+
+    steps:
+      - name: Check out repository (with nec2c submodule)
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Verify Wolfram Engine license is configured
+        run: |
+          if [ -z "$WOLFRAMSCRIPT_ENTITLEMENTID" ]; then
+            echo "::error::WOLFRAMSCRIPT_ENTITLEMENTID secret is not set. Create a free Wolfram Engine on-demand entitlement at https://www.wolfram.com/engine/ and add its ID as a repository secret."
+            exit 1
+          fi
+
+      - name: Install C toolchain (for CreateLibrary)
+        run: |
+          apt-get update
+          apt-get install -y --no-install-recommends gcc
+
+      - name: Report Wolfram version
+        run: wolframscript -code '$Version'
+
+      - name: Build libnec2link
+        run: wolframscript -file scripts/build.wl
+
+      - name: Run test suite
+        run: wolframscript -file scripts/test.wl

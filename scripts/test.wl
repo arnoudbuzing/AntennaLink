@@ -11,7 +11,7 @@ files = If[
   FileNames["*.wlt", "tests",Infinity]
 ];
 
-TestReport[
+report = TestReport[
   files,
   HandlerFunctions -> <|
     "ReportStarted" -> Function[report, Print["Starting test report: " <> report["EventID"]]],
@@ -22,4 +22,14 @@ TestReport[
     obj = test["TestObject"];
     Print["["<>format[obj["Outcome"]]<> "] " <> obj["TestID"]];
     ]]
-    |>]
+    |>];
+
+Print["Passed: ", report["TestsSucceededCount"],
+      "  Failed: ", report["TestsFailedCount"]];
+
+(* Exit non-zero on any failure so CI (and shell callers) can detect it. *)
+If[TrueQ[report["AllTestsSucceeded"]],
+  Print["ALL TESTS PASSED"],
+  Print["TEST FAILURES DETECTED"];
+  Exit[1]
+];
