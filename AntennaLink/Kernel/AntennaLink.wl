@@ -4,8 +4,8 @@ BeginPackage["ArnoudBuzing`AntennaLink`"]
 
 AntennaSolve::usage = "AntennaSolve[inputFile, outputFile] runs the NEC2 MoM solver on the given inputFile (.nec) and writes the results to outputFile (.out)."
 AntennaParseOutput::usage = "AntennaParseOutput[file] parses a NEC .out file into an Association containing Datasets."
-AntennaSolveMemory::usage = "AntennaSolveMemory[wires, freq, excitations] runs the NEC2 solver directly in memory, bypassing file I/O."
-AntennaFarFieldMemory::usage = "AntennaFarFieldMemory[wires, freq, excitations, thetaList, phiList] runs the NEC2 solver directly in memory and computes the far-field E-fields and gains for the specified list of theta and phi angles (in degrees)."
+AntennaSolveMemory::usage = "AntennaSolveMemory[wires, freq, excitations] runs the NEC2 solver directly in memory, bypassing file I/O. The result includes \"Currents\" and an \"InputParameters\" Dataset giving the input impedance (ZInput), drive voltage, current, and power at each excited segment."
+AntennaFarFieldMemory::usage = "AntennaFarFieldMemory[wires, freq, excitations, thetaList, phiList] runs the NEC2 solver directly in memory and computes the far-field E-fields and gains for the specified list of theta and phi angles (in degrees). The result also includes an \"InputParameters\" Dataset with the input impedance at each excited segment."
 AntennaYagiUda::usage = "AntennaYagiUda[reflectorLength, reflectorSpacing, drivenLength, directorLengths, directorSpacings, wireRadius, segments] or AntennaYagiUda[assoc] creates a structured list of wire associations representing a Yagi-Uda antenna aligned along the Y-axis."
 AntennaHelix::usage = "AntennaHelix[radius, pitch, turns, wireRadius, segmentsPerTurn] or AntennaHelix[assoc] creates a structured list of wire associations representing a helical antenna along the Z-axis. Each wire is given a unique Tag (1 at the base), so any point can be addressed for excitation."
 AntennaParabolicReflector::usage = "AntennaParabolicReflector[focalLength, dishRadius, numRibs, numRings, wireRadius] or AntennaParabolicReflector[assoc] creates a structured list of wire associations representing a wire-grid parabolic reflector dish vertexed at the origin. Each rib and ring wire is given a unique Tag."
@@ -246,6 +246,25 @@ loadGeometryOnce[wires_List, excitations_List, groundSpec_] := Module[
   "OK"
 ]
 
+(* Build a Dataset of per-source input parameters (one row per voltage source)
+   from the most recent solve: feed location, drive voltage, resulting current,
+   input impedance Zin = V/I, and delivered power. Returns Missing[] when there
+   are no sources. Call only after nec2LinkExecute[]. *)
+inputParametersDataset[] := Module[{params},
+  params = nec2LinkGetInputParameters[];
+  If[Length[params] > 0,
+    Dataset[<|
+      "Tag" -> Round[#[[1]]],
+      "Segment" -> Round[#[[2]]],
+      "Voltage" -> #[[3]] + I*#[[4]],
+      "Current" -> #[[5]] + I*#[[6]],
+      "ZInput" -> #[[7]] + I*#[[8]],
+      "Power" -> #[[9]]
+    |> & /@ params],
+    Missing["NotAvailable"]
+  ]
+];
+
 (* --- Input validation for the public solver entry points ------------------ *)
 validWireQ[w_Association] :=
   AllTrue[{"Segments", "Tag", "P1", "P2", "Radius"}, KeyExistsQ[w, #] &] &&
@@ -299,8 +318,9 @@ AntennaSolveMemory[wires_List, freq_?NumericQ, excitations_List, opts:OptionsPat
       {"CurrentReal", "CurrentImag", "X", "Y", "Z"},
       #
     ]& /@ currentsTensor];
-    
-    <|"Currents" -> currentData, "Wires" -> wires, "Excitations" -> excitations|>
+
+    <|"Currents" -> currentData, "InputParameters" -> inputParametersDataset[],
+      "Wires" -> wires, "Excitations" -> excitations|>
   ,
     $Failed
   ]
@@ -348,7 +368,9 @@ AntennaFarFieldMemory[wires_List, freq_?NumericQ, excitations_List, thetaList_Li
     |>& /@ farFieldTensor
   ];
   
-  <|"Currents" -> currentsData, "FarField" -> farFieldData, "Wires" -> wires, "Excitations" -> excitations|>]
+  <|"Currents" -> currentsData, "FarField" -> farFieldData,
+    "InputParameters" -> inputParametersDataset[],
+    "Wires" -> wires, "Excitations" -> excitations|>]
 
 AntennaYagiUda[assoc_Association] := With[
   {missing = Select[
