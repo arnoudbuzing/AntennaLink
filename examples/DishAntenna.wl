@@ -50,10 +50,11 @@ dishWires = AntennaParabolicReflector[<|
 |>];
 
 (* --- Add a half-wave dipole feed at the focal point ------------------------*)
-(* The dipole lies along X, centered on the focus, with its own tag (99) so it
-   can be driven unambiguously (the dish uses tags 1 and 2). *)
+(* The dipole lies along X, centered on the focus. Each reflector wire has a
+   unique tag, so the feed takes a tag just above the highest dish tag to keep
+   it distinct and drivable on its own. *)
 feedHalfLength = 0.25 * lambda;        (* quarter wavelength per arm           *)
-feedTag        = 99;
+feedTag        = Max[Lookup[dishWires, "Tag"]] + 1;
 feedSegments   = 11;
 feedCenterSeg  = Ceiling[feedSegments / 2];   (* 6 -> center segment           *)
 

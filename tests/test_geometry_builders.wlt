@@ -121,3 +121,21 @@ VerificationTest[
   True,
   TestID -> "parabolic-reflector-association-builder"
 ]
+
+(* Each helix segment gets a unique tag, with the base at tag 1. *)
+VerificationTest[
+  Module[{w = AntennaHelix[0.1, 0.05, 3, 0.001, 8]},
+    {DuplicateFreeQ[Lookup[w, "Tag"]], First[w]["Tag"], Length[w]}
+  ],
+  {True, 1, 24},
+  TestID -> "helix-unique-tags"
+]
+
+(* Every rib and ring wire gets a unique tag, first wire at tag 1. *)
+VerificationTest[
+  Module[{w = AntennaParabolicReflector[0.5, 1.0, 4, 2]},
+    {DuplicateFreeQ[Lookup[w, "Tag"]], First[w]["Tag"], Sort[Lookup[w, "Tag"]]}
+  ],
+  {True, 1, Range[16]},
+  TestID -> "parabolic-unique-tags"
+]
