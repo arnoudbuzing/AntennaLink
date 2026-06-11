@@ -1,5 +1,7 @@
 # AntennaLink
 
+[![CI](https://github.com/arnoudbuzing/AntennaLink/actions/workflows/ci.yml/badge.svg)](https://github.com/arnoudbuzing/AntennaLink/actions/workflows/ci.yml)
+
 `AntennaLink` is a high-performance Wolfram Language paclet that provides a direct, in-memory interface to the **NEC-2** (Numerical Electromagnetics Code) method of moments antenna simulator. It wraps the C translation [nec2c](https://github.com/KJ7LNW/nec2c) via Wolfram LibraryLink, bypassing slow and fragile temporary file I/O operations.
 
 With `AntennaLink`, you can perform electromagnetic geometry generation, parameter sweeps, ground-plane modeling, and interactive 3D visualizations directly from your Wolfram Language session.
@@ -268,3 +270,15 @@ Execute the systematic test suite inside a shell:
 ```bash
 /Applications/Wolfram/15.0/Wolfram.app/Contents/MacOS/wolfram -script scripts/test.wl
 ```
+The runner prints a per-test pass/fail summary and exits with a non-zero status
+if any test fails, so it can be used directly in scripts and CI.
+
+## Continuous Integration
+
+Every push and pull request to `main` builds `libnec2link` and runs the full
+test suite on GitHub Actions (see [`.github/workflows/ci.yml`](.github/workflows/ci.yml)),
+using the free [Wolfram Engine](https://www.wolfram.com/engine/) Docker image.
+
+CI requires a one-time setup: create a free Wolfram Engine on-demand entitlement
+and add its ID as a repository secret named `WOLFRAMSCRIPT_ENTITLEMENTID` under
+**Settings → Secrets and variables → Actions**.
