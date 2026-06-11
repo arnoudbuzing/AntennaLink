@@ -51,6 +51,13 @@ AntennaSolve::nolib = "The libnec2link library could not be found.";
 AntennaSolve::err = "The NEC2 solver returned an error code: `1`.";
 AntennaSweepMemory::freq = "The frequency specification `1` must be a numeric frequency or an explicit list of frequencies (e.g. Range[fmin, fmax, step]).";
 
+(* Shared validation messages. Defined on General so each public symbol reports
+   under its own name (e.g. AntennaSolveMemory::badwire) via the usual fallback. *)
+General::nowires = "The wire list is empty; at least one wire is required.";
+General::badwire = "`1` is not a valid wire. Each wire must be an Association with an integer \"Segments\" > 0, an integer \"Tag\", three-element numeric \"P1\" and \"P2\", and a positive numeric \"Radius\".";
+General::badex = "`1` is not a valid excitation. Each excitation must be an Association with an integer \"Tag\", a positive integer \"Segment\", and a numeric (possibly complex) \"Voltage\".";
+General::missingkey = "Required key(s) `1` missing from the input association.";
+
 
 AntennaParseOutput[outFile_String] := Module[
   {text, inputParamsStr, currentsStr, rpStr, extractTable, extractRPTable, inputData, currentData, rpData},
@@ -185,6 +192,35 @@ setupGeometry[wires_List, freq_?NumericQ, excitations_List, groundSpec_] := Modu
   "OK"
 ]
 
+(* --- Input validation for the public solver entry points ------------------ *)
+validWireQ[w_Association] :=
+  AllTrue[{"Segments", "Tag", "P1", "P2", "Radius"}, KeyExistsQ[w, #] &] &&
+  IntegerQ[w["Segments"]] && Positive[w["Segments"]] &&
+  IntegerQ[w["Tag"]] &&
+  VectorQ[w["P1"], NumericQ] && Length[w["P1"]] === 3 &&
+  VectorQ[w["P2"], NumericQ] && Length[w["P2"]] === 3 &&
+  NumericQ[w["Radius"]] && Positive[w["Radius"]];
+validWireQ[_] := False;
+
+validExcitationQ[e_Association] :=
+  AllTrue[{"Tag", "Segment", "Voltage"}, KeyExistsQ[e, #] &] &&
+  IntegerQ[e["Tag"]] &&
+  IntegerQ[e["Segment"]] && Positive[e["Segment"]] &&
+  NumericQ[e["Voltage"]];
+validExcitationQ[_] := False;
+
+(* Validate the wire and excitation lists for the public function `sym`. On the
+   first invalid entry, issue a message against `sym` and return False;
+   otherwise return True. *)
+validateSolverInputs[sym_, wires_List, excitations_List] := Module[{bad},
+  If[wires === {}, Message[MessageName[sym, "nowires"]]; Return[False]];
+  bad = SelectFirst[wires, ! validWireQ[#] &, None];
+  If[bad =!= None, Message[MessageName[sym, "badwire"], bad]; Return[False]];
+  bad = SelectFirst[excitations, ! validExcitationQ[#] &, None];
+  If[bad =!= None, Message[MessageName[sym, "badex"], bad]; Return[False]];
+  True
+];
+
 Options[AntennaSolveMemory] = {"Ground" -> None};
 
 AntennaSolveMemory[wires_List, freq_?NumericQ, excitations_List, opts:OptionsPattern[]] := Module[
@@ -196,6 +232,8 @@ AntennaSolveMemory[wires_List, freq_?NumericQ, excitations_List, opts:OptionsPat
   ];
 
   groundSpec = OptionValue[AntennaSolveMemory, {opts}, "Ground"];
+
+  If[! validateSolverInputs[AntennaSolveMemory, wires, excitations], Return[$Failed]];
 
   status = setupGeometry[wires, freq, excitations, groundSpec];
   If[status =!= "OK", Message[AntennaSolve::err, status]; Return[$Failed]];
@@ -225,6 +263,8 @@ AntennaFarFieldMemory[wires_List, freq_?NumericQ, excitations_List, thetaList_Li
   ];
 
   groundSpec = OptionValue[AntennaFarFieldMemory, {opts}, "Ground"];
+
+  If[! validateSolverInputs[AntennaFarFieldMemory, wires, excitations], Return[$Failed]];
 
   status = setupGeometry[wires, freq, excitations, groundSpec];
   If[status =!= "OK", Message[AntennaSolve::err, status]; Return[$Failed]];
@@ -256,18 +296,18 @@ AntennaFarFieldMemory[wires_List, freq_?NumericQ, excitations_List, thetaList_Li
   
   <|"Currents" -> currentsData, "FarField" -> farFieldData, "Wires" -> wires, "Excitations" -> excitations|>]
 
-AntennaYagiUda[assoc_Association] := Module[
-  {reflectorLength, reflectorSpacing, drivenLength, directorLengths, directorSpacings, wireRadius, segments},
-  reflectorLength = Lookup[assoc, "ReflectorLength"];
-  reflectorSpacing = Lookup[assoc, "ReflectorSpacing"];
-  drivenLength = Lookup[assoc, "DrivenLength"];
-  directorLengths = Lookup[assoc, "DirectorLengths"];
-  directorSpacings = Lookup[assoc, "DirectorSpacings"];
-  wireRadius = Lookup[assoc, "WireRadius", 0.001];
-  segments = Lookup[assoc, "Segments", 11];
-  
-  AntennaYagiUda[reflectorLength, reflectorSpacing, drivenLength, directorLengths, directorSpacings, wireRadius, segments] /;
-    !MissingQ[reflectorLength] && !MissingQ[reflectorSpacing] && !MissingQ[drivenLength] && ListQ[directorLengths] && ListQ[directorSpacings]
+AntennaYagiUda[assoc_Association] := With[
+  {missing = Select[
+     {"ReflectorLength", "ReflectorSpacing", "DrivenLength", "DirectorLengths", "DirectorSpacings"},
+     ! KeyExistsQ[assoc, #] &]},
+  If[missing =!= {},
+    Message[AntennaYagiUda::missingkey, missing]; $Failed,
+    AntennaYagiUda[
+      assoc["ReflectorLength"], assoc["ReflectorSpacing"], assoc["DrivenLength"],
+      assoc["DirectorLengths"], assoc["DirectorSpacings"],
+      Lookup[assoc, "WireRadius", 0.001], Lookup[assoc, "Segments", 11]
+    ]
+  ]
 ]
 
 AntennaYagiUda[reflectorLength_, reflectorSpacing_, drivenLength_, directorLengths_List, directorSpacings_List, wireRadius_:0.001, segments_:11] := Module[
@@ -308,16 +348,15 @@ AntennaYagiUda[reflectorLength_, reflectorSpacing_, drivenLength_, directorLengt
   wires
 ]
 
-AntennaHelix[assoc_Association] := Module[
-  {radius, pitch, turns, wireRadius, segmentsPerTurn},
-  radius = Lookup[assoc, "Radius"];
-  pitch = Lookup[assoc, "Pitch"];
-  turns = Lookup[assoc, "Turns"];
-  wireRadius = Lookup[assoc, "WireRadius", 0.001];
-  segmentsPerTurn = Lookup[assoc, "SegmentsPerTurn", 16];
-  
-  AntennaHelix[radius, pitch, turns, wireRadius, segmentsPerTurn] /;
-    !MissingQ[radius] && !MissingQ[pitch] && !MissingQ[turns]
+AntennaHelix[assoc_Association] := With[
+  {missing = Select[{"Radius", "Pitch", "Turns"}, ! KeyExistsQ[assoc, #] &]},
+  If[missing =!= {},
+    Message[AntennaHelix::missingkey, missing]; $Failed,
+    AntennaHelix[
+      assoc["Radius"], assoc["Pitch"], assoc["Turns"],
+      Lookup[assoc, "WireRadius", 0.001], Lookup[assoc, "SegmentsPerTurn", 16]
+    ]
+  ]
 ]
 
 AntennaHelix[radius_, pitch_, turns_, wireRadius_:0.001, segmentsPerTurn_:16] := Module[
@@ -341,16 +380,15 @@ AntennaHelix[radius_, pitch_, turns_, wireRadius_:0.001, segmentsPerTurn_:16] :=
   ]
 ]
 
-AntennaParabolicReflector[assoc_Association] := Module[
-  {focalLength, dishRadius, numRibs, numRings, wireRadius},
-  focalLength = Lookup[assoc, "FocalLength"];
-  dishRadius = Lookup[assoc, "DishRadius"];
-  numRibs = Lookup[assoc, "NumRibs"];
-  numRings = Lookup[assoc, "NumRings"];
-  wireRadius = Lookup[assoc, "WireRadius", 0.001];
-  
-  AntennaParabolicReflector[focalLength, dishRadius, numRibs, numRings, wireRadius] /;
-    !MissingQ[focalLength] && !MissingQ[dishRadius] && !MissingQ[numRibs] && !MissingQ[numRings]
+AntennaParabolicReflector[assoc_Association] := With[
+  {missing = Select[{"FocalLength", "DishRadius", "NumRibs", "NumRings"}, ! KeyExistsQ[assoc, #] &]},
+  If[missing =!= {},
+    Message[AntennaParabolicReflector::missingkey, missing]; $Failed,
+    AntennaParabolicReflector[
+      assoc["FocalLength"], assoc["DishRadius"], assoc["NumRibs"], assoc["NumRings"],
+      Lookup[assoc, "WireRadius", 0.001]
+    ]
+  ]
 ]
 
 AntennaParabolicReflector[focalLength_, dishRadius_, numRibs_, numRings_, wireRadius_:0.001] := Module[
@@ -415,6 +453,8 @@ AntennaSweepMemory[wires_List, freqSpec_, excitations_List, opts:OptionsPattern[
 
   z0 = OptionValue[AntennaSweepMemory, {opts}, "ReferenceImpedance"];
   groundSpec = OptionValue[AntennaSweepMemory, {opts}, "Ground"];
+
+  If[! validateSolverInputs[AntennaSweepMemory, wires, excitations], Return[$Failed]];
 
   freqList = Switch[freqSpec,
     _List,
