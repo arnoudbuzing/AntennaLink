@@ -40,7 +40,8 @@ Needs["ArnoudBuzing`AntennaLink`"];
 ## 1. In-Memory Solvers
 
 ### `AntennaSolveMemory`
-Computes segment-level currents directly in memory.
+Computes segment-level currents directly in memory, and reports the input
+impedance at each feed.
 
 ```wolfram
 (* Define a simple half-wave dipole *)
@@ -56,6 +57,10 @@ results = AntennaSolveMemory[wires, 299.79, excitations];
 
 (* View the currents dataset *)
 results["Currents"]
+
+(* Input impedance (and drive voltage/current/power) at each excited segment *)
+results["InputParameters"]
+(* e.g. ZInput -> 83.66 + 47.09 I ohms for this dipole *)
 ```
 
 ### Ground Planes Support
