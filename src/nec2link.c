@@ -68,6 +68,14 @@ DLLEXPORT int run_nec2(WolframLibraryData libData, mint Argc, MArgument *Args, M
 /* Memory Interface                                                          */
 /* ========================================================================= */
 
+/* Copies of the segment geometry in meters (unscaled), captured at
+   nec2_geometry_end. nec2_set_freq rescales the working arrays from these each
+   call, so the frequency can be changed repeatably without reloading geometry
+   (the frequency scaling in nec2c is otherwise destructive/in-place). */
+static double *orig_x = NULL, *orig_y = NULL, *orig_z = NULL,
+              *orig_si = NULL, *orig_bi = NULL;
+static int orig_n = 0;
+
 /* Free every dynamically allocated nec2c buffer and reset its pointer to NULL.
    Mirrors the pointer set in Null_Pointers(), but actually releases the memory
    instead of merely orphaning it. nec2_init calls this before each solve, so a
@@ -75,6 +83,10 @@ DLLEXPORT int run_nec2(WolframLibraryData libData, mint Argc, MArgument *Args, M
    working set. Safe on the first call: these globals are zero-initialized, so
    every pointer is NULL and free_ptr() is a no-op. */
 static void nec2_free_all(void) {
+    free_ptr((void *)&orig_x); free_ptr((void *)&orig_y); free_ptr((void *)&orig_z);
+    free_ptr((void *)&orig_si); free_ptr((void *)&orig_bi);
+    orig_n = 0;
+
     free_ptr((void *)&crnt.air);  free_ptr((void *)&crnt.aii);
     free_ptr((void *)&crnt.bir);  free_ptr((void *)&crnt.bii);
     free_ptr((void *)&crnt.cir);  free_ptr((void *)&crnt.cii);
@@ -223,7 +235,27 @@ DLLEXPORT int nec2_geometry_end(WolframLibraryData libData, mint Argc, MArgument
             netcx.neq2 = 0;
         }
         netcx.npeq = data.np + 2 * data.mp;
-        
+
+        /* Snapshot the unscaled (meter) geometry so nec2_set_freq can rescale
+           from it repeatably, allowing a frequency sweep to reuse one loaded
+           geometry instead of rebuilding it per frequency. */
+        orig_n = data.n;
+        if (orig_n > 0) {
+            size_t osz = (size_t)orig_n * sizeof(double);
+            mem_realloc((void *)&orig_x, osz);
+            mem_realloc((void *)&orig_y, osz);
+            mem_realloc((void *)&orig_z, osz);
+            mem_realloc((void *)&orig_si, osz);
+            mem_realloc((void *)&orig_bi, osz);
+            for (int i = 0; i < orig_n; i++) {
+                orig_x[i]  = data.x[i];
+                orig_y[i]  = data.y[i];
+                orig_z[i]  = data.z[i];
+                orig_si[i] = data.si[i];
+                orig_bi[i] = data.bi[i];
+            }
+        }
+
         MArgument_setInteger(Res, 0);
     } else {
         MArgument_setInteger(Res, (val == 256) ? 0 : val);
@@ -237,18 +269,21 @@ DLLEXPORT int nec2_set_freq(WolframLibraryData libData, mint Argc, MArgument *Ar
     /* Wavelength in meters, matching upstream nec2c (main.c: data.wlam = CVEL/fmhz).
        The geometry scale factor below is fr = 1/wlam = mhz/CVEL. */
     data.wlam = CVEL / mhz;
-    
-    if (data.n != 0) {
+
+    /* Rescale the working geometry from the meter-scale snapshot rather than
+       scaling in place, so this can be called once per frequency in a sweep
+       without compounding the scaling. */
+    if (data.n != 0 && orig_n == data.n && orig_x != NULL) {
         double fr = mhz / CVEL;
         for (int i = 0; i < data.n; i++) {
-            data.x[i]  *= fr;
-            data.y[i]  *= fr;
-            data.z[i]  *= fr;
-            data.si[i] *= fr;
-            data.bi[i] *= fr;
+            data.x[i]  = orig_x[i]  * fr;
+            data.y[i]  = orig_y[i]  * fr;
+            data.z[i]  = orig_z[i]  * fr;
+            data.si[i] = orig_si[i] * fr;
+            data.bi[i] = orig_bi[i] * fr;
         }
     }
-    
+
     return LIBRARY_NO_ERROR;
 }
 

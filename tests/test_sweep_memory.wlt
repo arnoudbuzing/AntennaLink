@@ -56,3 +56,20 @@ VerificationTest[
   {True, True, True},
   TestID -> "sweep-memory-computes-valid-s11-and-vswr"
 ]
+
+(* Reusing one loaded geometry across frequencies must give the same impedances
+   as solving each frequency from a freshly loaded geometry. *)
+VerificationTest[
+  Module[{wires, excitations, freqs, swept, perFreq},
+    wires = {
+      <|"Segments" -> 11, "Tag" -> 1, "P1" -> {0, 0, -0.25}, "P2" -> {0, 0, 0.25}, "Radius" -> 0.001|>
+    };
+    excitations = {<|"Tag" -> 1, "Segment" -> 6, "Voltage" -> 1.0|>};
+    freqs = {280.0, 300.0, 320.0};
+    swept = Normal[AntennaSweepMemory[wires, freqs, excitations][All, "ZInput"]];
+    perFreq = First[Normal[AntennaSweepMemory[wires, {#}, excitations][All, "ZInput"]]] & /@ freqs;
+    Max[Abs[swept - perFreq]] < 10.^-6
+  ],
+  True,
+  TestID -> "sweep-memory-reuse-matches-per-frequency"
+]
