@@ -310,6 +310,161 @@ result or a far-field dataset.
 
 ---
 
+# Worked Examples
+
+Complete, copy-paste-runnable workflows. Each assumes the paclet is loaded:
+
+```wolfram
+PacletDirectoryLoad["/path/to/AntennaLink/AntennaLink"];
+Needs["ArnoudBuzing`AntennaLink`"];
+```
+
+A ready-to-run script combining all of these ideas for a parabolic dish lives
+in [`examples/DishAntenna.wl`](examples/DishAntenna.wl).
+
+## Example 1 — Half-wave dipole: impedance, currents, and patterns
+
+The canonical starting point: build a half-wave dipole at 300 MHz
+(λ ≈ 1 m), read its input impedance, and visualize both the current
+distribution and the radiation pattern.
+
+```wolfram
+(* Half-wave dipole along Z: 0.5 m long, fed at the center segment *)
+dipole = {<|"Segments" -> 21, "Tag" -> 1, "P1" -> {0, 0, -0.25}, "P2" -> {0, 0, 0.25}, "Radius" -> 0.001|>};
+feed   = {<|"Tag" -> 1, "Segment" -> 11, "Voltage" -> 1.0 + 0.0 I|>};
+
+(* Solve for currents + input impedance (≈ 85 + j49 Ω for this thickness) *)
+sol = AntennaSolveMemory[dipole, 300.0, feed];
+sol["InputParameters"]                       (* Dataset: Tag, Segment, ZInput, Power, ... *)
+zin = Normal[sol["InputParameters"]][[1, "ZInput"]]
+
+(* 1a. Geometry colored by current magnitude (feed point highlighted) *)
+AntennaPlotGeometry[sol, "ColorFunction" -> "Magnitude"]
+
+(* 1b. Full far-field pattern over a theta/phi grid *)
+ff = AntennaFarFieldMemory[dipole, 300.0, feed, Range[0.0, 180.0, 5.0], Range[0.0, 350.0, 10.0]];
+
+(* 1c. 3D pattern with the geometry overlaid at the center *)
+AntennaPlotPattern3D[ff, "ShowGeometry" -> True]
+
+(* 1d. 2D elevation cut — the classic dipole figure-8 *)
+AntennaPlotPattern2D[ff, "Plane" -> "Elevation", "DynamicRange" -> 30.0]
+
+(* Peak gain straight off the far-field dataset (≈ 2.1 dBi) *)
+Max[Normal[ff["FarField"]][[All, "GainDB"]]]
+```
+
+## Example 2 — Yagi-Uda: gain, pattern, and front-to-back ratio
+
+Build a multi-element Yagi (aligned along the Y axis, main beam toward +Y),
+then extract directivity figures of merit directly from the far-field data.
+
+```wolfram
+yagi = AntennaYagiUda[<|
+  "ReflectorLength"  -> 0.50,
+  "ReflectorSpacing" -> 0.15,
+  "DrivenLength"     -> 0.47,
+  "DirectorLengths"  -> {0.44, 0.43, 0.42},
+  "DirectorSpacings" -> {0.15, 0.20, 0.20},
+  "Segments"         -> 11
+|>];
+
+(* The driven element is Tag 2; feed its center segment *)
+feed = {<|"Tag" -> 2, "Segment" -> 6, "Voltage" -> 1.0|>};
+
+ff = AntennaFarFieldMemory[yagi, 300.0, feed, Range[0.0, 180.0, 5.0], Range[0.0, 355.0, 5.0]];
+
+(* 3D pattern shows the forward beam toward the directors *)
+AntennaPlotPattern3D[ff, "ShowGeometry" -> True]
+
+(* Azimuth cut through the beam (theta = 90 deg plane) *)
+AntennaPlotPattern2D[ff, "Plane" -> "Azimuth", "DynamicRange" -> 30.0]
+
+(* Figures of merit from the dataset *)
+ffData = Normal[ff["FarField"]];
+gainAt[t_, p_] := SelectFirst[ffData, #Theta == t && #Phi == p &]["GainDB"];
+peakGain    = Max[ffData[[All, "GainDB"]]]      (* ~8–10 dBi *)
+frontToBack = gainAt[90, 90] - gainAt[90, 270]  (* forward (+Y) minus back (−Y) *)
+```
+
+## Example 3 — Monopole over ground with a VSWR sweep
+
+A quarter-wave monopole on a perfect ground plane (≈ 42 + j24 Ω here), then a
+frequency sweep plotting VSWR and return loss — the everyday matching view.
+
+```wolfram
+monopole = {<|"Segments" -> 9, "Tag" -> 1, "P1" -> {0, 0, 0}, "P2" -> {0, 0, 0.25}, "Radius" -> 0.001|>};
+feed     = {<|"Tag" -> 1, "Segment" -> 1, "Voltage" -> 1.0|>};
+perfectGnd = <|"Type" -> "Perfect", "ConnectWires" -> True|>;
+
+(* Single-frequency impedance (≈ 42 + j24 Ω) *)
+sol = AntennaSolveMemory[monopole, 299.79, feed, "Ground" -> perfectGnd];
+Normal[sol["InputParameters"]][[1, "ZInput"]]
+
+(* Sweep 250–350 MHz against a 50 Ω reference *)
+sweep = AntennaSweepMemory[monopole, Range[250.0, 350.0, 2.0], feed,
+  "Ground" -> perfectGnd, "ReferenceImpedance" -> 50.0];
+
+(* Plot VSWR vs frequency *)
+ListLinePlot[Normal[sweep[All, {#Frequency, #VSWR} &]],
+  PlotRange -> {1, 5}, FrameLabel -> {"Frequency (MHz)", "VSWR"},
+  PlotTheme -> "Detailed", GridLines -> {None, {2}}]
+
+(* Plot return loss S11 (dB) vs frequency *)
+ListLinePlot[Normal[sweep[All, {#Frequency, #S11} &]],
+  FrameLabel -> {"Frequency (MHz)", "S11 (dB)"}, PlotTheme -> "Detailed"]
+```
+
+## Example 4 — Coil-loaded short dipole
+
+A 0.3 λ dipole is too short to resonate (large capacitive reactance); a center
+loading coil adds series inductive reactance to move it toward resonance. This
+shows the `"Loads"` option and a sweep of the resulting reactance.
+
+```wolfram
+short = {<|"Segments" -> 11, "Tag" -> 1, "P1" -> {0, 0, -0.15}, "P2" -> {0, 0, 0.15}, "Radius" -> 0.001|>};
+feed  = {<|"Tag" -> 1, "Segment" -> 6, "Voltage" -> 1.0|>};
+
+(* Unloaded: strongly capacitive (large negative reactance) *)
+Normal[AntennaSolveMemory[short, 300.0, feed]["InputParameters"]][[1, "ZInput"]]
+
+(* Add a center loading coil to add series inductive reactance *)
+coil = {<|"Type" -> "Series", "Tag" -> 1, "SegmentFrom" -> 6, "SegmentTo" -> 6, "Inductance" -> 120.*^-9|>};
+Normal[AntennaSolveMemory[short, 300.0, feed, "Loads" -> coil]["InputParameters"]][[1, "ZInput"]]
+
+(* Sweep the loaded antenna and plot the reactance crossing zero (resonance) *)
+sweep = AntennaSweepMemory[short, Range[250.0, 350.0, 2.0], feed, "Loads" -> coil];
+ListLinePlot[Normal[sweep[All, {#Frequency, Im[#ZInput]} &]],
+  FrameLabel -> {"Frequency (MHz)", "Reactance (Ω)"}, PlotTheme -> "Detailed",
+  GridLines -> {None, {0}}]
+```
+
+## Example 5 — Helical antenna and circular polarization
+
+An axial-mode helix radiates a circularly polarized beam along its axis (+Z).
+The returned `ETheta`/`EPhi` components let you compute the axial ratio.
+
+```wolfram
+helix = AntennaHelix[<|"Radius" -> 0.05, "Pitch" -> 0.05, "Turns" -> 6, "SegmentsPerTurn" -> 12|>];
+feed  = {<|"Tag" -> 1, "Segment" -> 1, "Voltage" -> 1.0|>};   (* tag 1 = base segment *)
+
+ff = AntennaFarFieldMemory[helix, 1000.0, feed, Range[0.0, 180.0, 5.0], Range[0.0, 350.0, 10.0]];
+
+(* Geometry colored by current, and the 3D pattern (endfire beam toward +Z) *)
+AntennaPlotGeometry[AntennaSolveMemory[helix, 1000.0, feed], "ColorFunction" -> "Phase"]
+AntennaPlotPattern3D[ff, "ShowGeometry" -> True]
+
+(* Axial ratio on boresight (theta = 0) from the complex field components.
+   Decompose into RHCP/LHCP; AR = (|R|+|L|) / ||R|-|L||  (1 = perfect circular) *)
+boresight = SelectFirst[Normal[ff["FarField"]], #Theta == 0.0 &];
+{eth, eph} = {boresight["ETheta"], boresight["EPhi"]};
+{eR, eL}   = {(eth - I eph)/Sqrt[2], (eth + I eph)/Sqrt[2]};
+axialRatio = (Abs[eR] + Abs[eL]) / Abs[Abs[eR] - Abs[eL]]
+axialRatioDB = 20 Log10[axialRatio]
+```
+
+---
+
 ## Running the Unit Tests
 
 Execute the systematic test suite inside a shell:
