@@ -5,10 +5,26 @@ format[outcome_String] := Switch[
   _, "\:26a0"
   ];
 
-files = If[ 
-  Length[$CommandLine]>3, 
-  { Last[$CommandLine] }, (* to run a specific file *)
-  FileNames["*.wlt", "tests",Infinity]
+(* Locate the tests directory relative to this script, independent of the
+   current working directory and of how the kernel was launched. *)
+testsDir = FileNameJoin[{ParentDirectory[DirectoryName[ExpandFileName[$InputFileName]]], "tests"}];
+
+(* Optional: run a specific file by passing a .wlt path as a script argument.
+   Check both arg lists so it works under `wolframscript -file` ($ScriptCommandLine)
+   and `wolfram -script` ($CommandLine). *)
+explicit = Select[
+  Join[
+    If[ListQ[$ScriptCommandLine], $ScriptCommandLine, {}],
+    If[ListQ[$CommandLine], $CommandLine, {}]
+  ],
+  StringEndsQ[#, ".wlt"] &
+];
+
+files = If[explicit =!= {}, explicit, FileNames["*.wlt", testsDir, Infinity]];
+
+If[files === {},
+  Print["No .wlt test files found in ", testsDir];
+  Exit[1]
 ];
 
 report = TestReport[
