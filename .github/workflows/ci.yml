@@ -26,6 +26,14 @@ jobs:
       WOLFRAMSCRIPT_ENTITLEMENTID: ${{ secrets.WOLFRAMSCRIPT_ENTITLEMENTID }}
 
     steps:
+      # git must exist before checkout, otherwise actions/checkout falls back to
+      # the REST API tarball, which cannot fetch the nec2c submodule. gcc is
+      # needed later by CreateLibrary.
+      - name: Install build tools (git, gcc)
+        run: |
+          apt-get update
+          apt-get install -y --no-install-recommends git gcc
+
       - name: Check out repository (with nec2c submodule)
         uses: actions/checkout@v4
         with:
@@ -37,11 +45,6 @@ jobs:
             echo "::error::WOLFRAMSCRIPT_ENTITLEMENTID secret is not set. Create a free Wolfram Engine on-demand entitlement at https://www.wolfram.com/engine/ and add its ID as a repository secret."
             exit 1
           fi
-
-      - name: Install C toolchain (for CreateLibrary)
-        run: |
-          apt-get update
-          apt-get install -y --no-install-recommends gcc
 
       - name: Report Wolfram version
         run: wolframscript -code '$Version'
