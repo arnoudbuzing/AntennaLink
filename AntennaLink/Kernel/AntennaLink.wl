@@ -7,8 +7,8 @@ AntennaParseOutput::usage = "AntennaParseOutput[file] parses a NEC .out file int
 AntennaSolveMemory::usage = "AntennaSolveMemory[wires, freq, excitations] runs the NEC2 solver directly in memory, bypassing file I/O."
 AntennaFarFieldMemory::usage = "AntennaFarFieldMemory[wires, freq, excitations, thetaList, phiList] runs the NEC2 solver directly in memory and computes the far-field E-fields and gains for the specified list of theta and phi angles (in degrees)."
 AntennaYagiUda::usage = "AntennaYagiUda[reflectorLength, reflectorSpacing, drivenLength, directorLengths, directorSpacings, wireRadius, segments] or AntennaYagiUda[assoc] creates a structured list of wire associations representing a Yagi-Uda antenna aligned along the Y-axis."
-AntennaHelix::usage = "AntennaHelix[radius, pitch, turns, wireRadius, segmentsPerTurn] or AntennaHelix[assoc] creates a structured list of wire associations representing a helical antenna along the Z-axis."
-AntennaParabolicReflector::usage = "AntennaParabolicReflector[focalLength, dishRadius, numRibs, numRings, wireRadius] or AntennaParabolicReflector[assoc] creates a structured list of wire associations representing a wire-grid parabolic reflector dish vertexed at the origin."
+AntennaHelix::usage = "AntennaHelix[radius, pitch, turns, wireRadius, segmentsPerTurn] or AntennaHelix[assoc] creates a structured list of wire associations representing a helical antenna along the Z-axis. Each wire is given a unique Tag (1 at the base), so any point can be addressed for excitation."
+AntennaParabolicReflector::usage = "AntennaParabolicReflector[focalLength, dishRadius, numRibs, numRings, wireRadius] or AntennaParabolicReflector[assoc] creates a structured list of wire associations representing a wire-grid parabolic reflector dish vertexed at the origin. Each rib and ring wire is given a unique Tag."
 AntennaSweepMemory::usage = "AntennaSweepMemory[wires, freqSpec, excitations] sweeps the frequencies given by freqSpec (a single frequency or an explicit list, e.g. Range[fmin, fmax, step]) to compute input impedance, S11, and VSWR in memory."
 AntennaPlotGeometry::usage = "AntennaPlotGeometry[wires] plots the 3D geometry of the antenna. AntennaPlotGeometry[solveResult] plots the geometry colored by computed segment currents."
 AntennaPlotPattern3D::usage = "AntennaPlotPattern3D[farFieldData] plots the 3D radiation pattern. AntennaPlotPattern3D[solveResult] plots the radiation pattern and overlays the physical antenna geometry at the center."
@@ -371,7 +371,7 @@ AntennaHelix[radius_, pitch_, turns_, wireRadius_:0.001, segmentsPerTurn_:16] :=
     p2 = {N[radius] * Cos[phiVal], N[radius] * Sin[phiVal], N[pitch] * (phiVal / (2.0 * Pi))};
     <|
       "Segments" -> 1,
-      "Tag" -> 1,
+      "Tag" -> k,
       "P1" -> p1,
       "P2" -> p2,
       "Radius" -> N[wireRadius]
@@ -392,12 +392,13 @@ AntennaParabolicReflector[assoc_Association] := With[
 ]
 
 AntennaParabolicReflector[focalLength_, dishRadius_, numRibs_, numRings_, wireRadius_:0.001] := Module[
-  {wires, ribsAngles, ringRadii, phi, r1, r2, p1, p2},
-  
+  {wires, ribsAngles, ringRadii, phi, r1, r2, p1, p2, tag},
+
   wires = {};
+  tag = 0;   (* running counter: every rib and ring wire gets a unique tag *)
   ribsAngles = Table[k * (2.0 * Pi) / N[numRibs], {k, 1, numRibs}];
   ringRadii = Table[j * N[dishRadius] / N[numRings], {j, 0, numRings}];
-  
+
   (* Generate Ribs *)
   Do[
     phi = ribsAngles[[k]];
@@ -408,7 +409,7 @@ AntennaParabolicReflector[focalLength_, dishRadius_, numRibs_, numRings_, wireRa
       p2 = {r2 * Cos[phi], r2 * Sin[phi], (r2^2) / (4.0 * N[focalLength])};
       AppendTo[wires, <|
         "Segments" -> 1,
-        "Tag" -> 1,
+        "Tag" -> ++tag,
         "P1" -> p1,
         "P2" -> p2,
         "Radius" -> N[wireRadius]
@@ -417,7 +418,7 @@ AntennaParabolicReflector[focalLength_, dishRadius_, numRibs_, numRings_, wireRa
     ],
     {k, 1, numRibs}
   ];
-  
+
   (* Generate Rings *)
   Do[
     r2 = ringRadii[[j + 1]];
@@ -427,7 +428,7 @@ AntennaParabolicReflector[focalLength_, dishRadius_, numRibs_, numRings_, wireRa
         p2 = {r2 * Cos[phi2], r2 * Sin[phi2], (r2^2) / (4.0 * N[focalLength])};
         AppendTo[wires, <|
           "Segments" -> 1,
-          "Tag" -> 2,
+          "Tag" -> ++tag,
           "P1" -> p1,
           "P2" -> p2,
           "Radius" -> N[wireRadius]
@@ -437,7 +438,7 @@ AntennaParabolicReflector[focalLength_, dishRadius_, numRibs_, numRings_, wireRa
     ],
     {j, 1, numRings}
   ];
-  
+
   wires
 ]
 
