@@ -53,5 +53,9 @@ jobs:
       - name: Build libnec2link
         run: wolframscript -file scripts/build.wl
 
+      - name: Diagnose solve (temporary)
+        run: |
+          wolframscript -code 'PacletDirectoryLoad[FileNameJoin[{Directory[], "AntennaLink"}]]; Needs["ArnoudBuzing`AntennaLink`"]; lib = FindLibrary["libnec2link"]; Print["LIB=", lib]; r = AntennaSolveMemory[{<|"Segments" -> 11, "Tag" -> 1, "P1" -> {0, 0, -0.25}, "P2" -> {0, 0, 0.25}, "Radius" -> 0.001|>}, 299.79, {<|"Tag" -> 1, "Segment" -> 6, "Voltage" -> 1.0|>}]; Print["HEAD=", Head[r]]; If[AssociationQ[r], Print["NCURR=", Length[r["Currents"]]], Print["FAILED=", r]]'
+
       - name: Run test suite
         run: wolframscript -file scripts/test.wl
