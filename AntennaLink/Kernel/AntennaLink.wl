@@ -206,6 +206,46 @@ setupGeometry[wires_List, freq_?NumericQ, excitations_List, groundSpec_] := Modu
   "OK"
 ]
 
+(* Load geometry and excitations once, without setting a frequency or solving.
+   Used by AntennaSweepMemory so the structure is built a single time and only
+   the frequency-dependent steps (set_freq, ground, execute) repeat per point.
+   Returns "OK" or a status string naming the failed stage. *)
+loadGeometryOnce[wires_List, excitations_List, groundSpec_] := Module[
+  {result},
+
+  result = nec2LinkInit[];
+  If[result =!= 0, Return["InitFailed"]];
+
+  Scan[
+    Function[wire,
+      nec2LinkAddWire[
+        wire["Segments"], wire["Tag"],
+        Developer`ToPackedArray[N[wire["P1"]]],
+        Developer`ToPackedArray[N[wire["P2"]]],
+        N[wire["Radius"]]
+      ]
+    ],
+    wires
+  ];
+
+  result = nec2LinkGeometryEnd[groundConnectFlag[groundSpec]];
+  If[result =!= 0, Return["GeometryEndFailed"]];
+
+  (* Excitations are frequency-independent (segment index + complex voltage),
+     so they are applied once here rather than per frequency. *)
+  Scan[
+    Function[ex,
+      nec2LinkSetExcitation[
+        ex["Tag"], ex["Segment"],
+        Re[ex["Voltage"]], Im[ex["Voltage"]]
+      ]
+    ],
+    excitations
+  ];
+
+  "OK"
+]
+
 (* --- Input validation for the public solver entry points ------------------ *)
 validWireQ[w_Association] :=
   AllTrue[{"Segments", "Tag", "P1", "P2", "Radius"}, KeyExistsQ[w, #] &] &&
@@ -459,7 +499,7 @@ AntennaParabolicReflector[focalLength_, dishRadius_, numRibs_, numRings_, wireRa
 Options[AntennaSweepMemory] = {"Ground" -> None, "ReferenceImpedance" -> 50.0};
 
 AntennaSweepMemory[wires_List, freqSpec_, excitations_List, opts:OptionsPattern[]] := Module[
-  {freqList, z0, results, groundSpec},
+  {freqList, z0, results, groundSpec, loadStatus},
 
   If[$LibraryFile === $Failed,
     Message[AntennaSolve::nolib];
@@ -481,12 +521,17 @@ AntennaSweepMemory[wires_List, freqSpec_, excitations_List, opts:OptionsPattern[
       Return[$Failed]
   ];
   
+  (* Build the structure once; only the frequency-dependent steps below repeat. *)
+  loadStatus = loadGeometryOnce[wires, excitations, groundSpec];
+  If[loadStatus =!= "OK",
+    Return[Dataset[Table[<|"Frequency" -> f, "Error" -> loadStatus|>, {f, freqList}]]]
+  ];
+
   results = Table[
-    Module[{status, currents, inputParams, tag, seg, voltage, current, zin, pwr, gamma, s11, vswr},
-      status = setupGeometry[wires, f, excitations, groundSpec];
+    Module[{currents, inputParams, tag, seg, voltage, current, zin, pwr, gamma, s11, vswr},
+      nec2LinkSetFreq[f];
+      setupGround[groundSpec];
       Which[
-        status =!= "OK",
-          <|"Frequency" -> f, "Error" -> status|>,
         Length[currents = nec2LinkExecute[]] == 0,
           <|"Frequency" -> f, "Error" -> "ExecuteFailed"|>,
         Length[inputParams = nec2LinkGetInputParameters[]] == 0,
