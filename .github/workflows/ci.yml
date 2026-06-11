@@ -53,9 +53,12 @@ jobs:
       - name: Build libnec2link
         run: wolframscript -file scripts/build.wl
 
-      - name: Diagnose solve (temporary)
+      - name: Diagnose (temporary)
         run: |
-          wolframscript -code 'PacletDirectoryLoad[FileNameJoin[{Directory[], "AntennaLink"}]]; Needs["ArnoudBuzing`AntennaLink`"]; lib = FindLibrary["libnec2link"]; Print["LIB=", lib]; r = AntennaSolveMemory[{<|"Segments" -> 11, "Tag" -> 1, "P1" -> {0, 0, -0.25}, "P2" -> {0, 0, 0.25}, "Radius" -> 0.001|>}, 299.79, {<|"Tag" -> 1, "Segment" -> 6, "Voltage" -> 1.0|>}]; Print["HEAD=", Head[r]]; If[AssociationQ[r], Print["NCURR=", Length[r["Currents"]]], Print["FAILED=", r]]'
+          echo "=== built library tree ==="
+          ls -R AntennaLink/LibraryResources || true
+          echo "=== kernel view ==="
+          wolframscript -code 'Print["SystemID=", $SystemID]; Print["DirLoad=", PacletDirectoryLoad[FileNameJoin[{Directory[], "AntennaLink"}]]]; Print["Find=", FindLibrary["libnec2link"]]; Print["OnPath=", FileExistsQ[FileNameJoin[{Directory[], "AntennaLink", "LibraryResources", $SystemID, "libnec2link.so"}]]]'
 
       - name: Run test suite
         run: wolframscript -file scripts/test.wl
