@@ -27,25 +27,40 @@ If[files === {},
   Exit[1]
 ];
 
-report = TestReport[
-  files,
-  HandlerFunctions -> <|
-    "ReportStarted" -> Function[report, Print["Starting test report: " <> report["EventID"]]],
-    "ReportCompleted" -> Function[report, Print["Test report completed: " <> report["EventID"]]],
-    "FileStarted" -> Function[testFile, Print["Starting test file: " <> testFile["TestFileName"]]],
-    "FileCompleted" -> Function[testFile, Print["Test file completed: " <> testFile["EventID"]]],
-    "TestEvaluated" -> Function[test, Module[{obj},
-    obj = test["TestObject"];
-    Print["["<>format[obj["Outcome"]]<> "] " <> obj["TestID"]];
-    ]]
-    |>];
+(* A syntax error in a .wlt file makes TestReport emit TestReport::rnterr and
+   silently skip that file, which would otherwise pass vacuously. Trap it. *)
+Check[
+  report = TestReport[
+    files,
+    HandlerFunctions -> <|
+      "ReportStarted" -> Function[report, Print["Starting test report: " <> report["EventID"]]],
+      "ReportCompleted" -> Function[report, Print["Test report completed: " <> report["EventID"]]],
+      "FileStarted" -> Function[testFile, Print["Starting test file: " <> testFile["TestFileName"]]],
+      "FileCompleted" -> Function[testFile, Print["Test file completed: " <> testFile["EventID"]]],
+      "TestEvaluated" -> Function[test, Module[{obj},
+      obj = test["TestObject"];
+      Print["["<>format[obj["Outcome"]]<> "] " <> obj["TestID"]];
+      ]]
+      |>],
+  report = $Failed,
+  {TestReport::rnterr}
+];
+
+If[report === $Failed,
+  Print["A test file could not be read (syntax error); aborting."];
+  Exit[1]
+];
 
 Print["Passed: ", report["TestsSucceededCount"],
       "  Failed: ", report["TestsFailedCount"]];
 
-(* Exit non-zero on any failure so CI (and shell callers) can detect it. *)
-If[TrueQ[report["AllTestsSucceeded"]],
-  Print["ALL TESTS PASSED"],
-  Print["TEST FAILURES DETECTED"];
-  Exit[1]
+(* Exit non-zero on any failure (or if nothing actually ran) so CI and shell
+   callers can detect it. *)
+Which[
+  report["TestsSucceededCount"] + report["TestsFailedCount"] == 0,
+    Print["NO TESTS RAN"]; Exit[1],
+  ! TrueQ[report["AllTestsSucceeded"]],
+    Print["TEST FAILURES DETECTED"]; Exit[1],
+  True,
+    Print["ALL TESTS PASSED"]
 ];

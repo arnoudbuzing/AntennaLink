@@ -97,6 +97,30 @@ Supported ground parameters in the `"Ground"` Association:
 - `"RadialLength"`, `"RadialRadius"` (Reals): Ground screen radial geometry parameters.
 - `"ConnectWires"` (`True`/`False`): Specifies if wires touching the $Z=0$ ground plane connect to it.
 
+### Lumped Loads
+
+All in-memory solvers accept a `"Loads"` option — a list of Associations that
+place lumped R/L/C or impedance loading on segments (NEC's `LD` card), e.g. a
+center-loading coil, a trap, or a resistive load:
+
+```wolfram
+(* A 50 nH loading coil at the center of a dipole *)
+AntennaSolveMemory[wires, 299.79, excitations,
+  "Loads" -> {<|
+    "Type" -> "Series",        (* series R-L-C *)
+    "Tag" -> 1, "SegmentFrom" -> 6, "SegmentTo" -> 6,
+    "Inductance" -> 50.*^-9
+  |>}
+]
+```
+
+Each load Association supports:
+- `"Type"`: `"Series"` or `"Parallel"` (R-L-C), `"SeriesPerMeter"` / `"ParallelPerMeter"`, `"Impedance"` (fixed $R + jX$), or `"Conductivity"` (S/m).
+- `"Tag"`, `"SegmentFrom"`, `"SegmentTo"`: which segments to load (tag with a relative segment range; default loads all segments of the tag).
+- `"Resistance"`, `"Inductance"`, `"Capacitance"` (for R-L-C types); `"Resistance"` + `"Reactance"` (for `"Impedance"`); `"Conductivity"` (for `"Conductivity"`).
+
+The load impedance is recomputed at each frequency, so loads work in sweeps too.
+
 ---
 
 ## 2. Geometry Builders

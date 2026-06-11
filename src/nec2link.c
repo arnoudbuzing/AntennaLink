@@ -76,6 +76,12 @@ static double *orig_x = NULL, *orig_y = NULL, *orig_z = NULL,
               *orig_si = NULL, *orig_bi = NULL;
 static int orig_n = 0;
 
+/* Lumped-load specifications (NEC LD card), registered via nec2_add_load and
+   applied by load() in nec2_execute. Stored here because nec2c keeps the LD
+   arrays local to main.c. zload.nload (a nec2c global) holds the count. */
+static int *ld_typ = NULL, *ld_tag = NULL, *ld_tagf = NULL, *ld_tagt = NULL;
+static double *ld_zlr = NULL, *ld_zli = NULL, *ld_zlc = NULL;
+
 /* Free every dynamically allocated nec2c buffer and reset its pointer to NULL.
    Mirrors the pointer set in Null_Pointers(), but actually releases the memory
    instead of merely orphaning it. nec2_init calls this before each solve, so a
@@ -86,6 +92,10 @@ static void nec2_free_all(void) {
     free_ptr((void *)&orig_x); free_ptr((void *)&orig_y); free_ptr((void *)&orig_z);
     free_ptr((void *)&orig_si); free_ptr((void *)&orig_bi);
     orig_n = 0;
+
+    free_ptr((void *)&ld_typ); free_ptr((void *)&ld_tag);
+    free_ptr((void *)&ld_tagf); free_ptr((void *)&ld_tagt);
+    free_ptr((void *)&ld_zlr); free_ptr((void *)&ld_zli); free_ptr((void *)&ld_zlc);
 
     free_ptr((void *)&crnt.air);  free_ptr((void *)&crnt.aii);
     free_ptr((void *)&crnt.bir);  free_ptr((void *)&crnt.bii);
@@ -318,6 +328,40 @@ DLLEXPORT int nec2_set_excitation(WolframLibraryData libData, mint Argc, MArgume
     return LIBRARY_NO_ERROR;
 }
 
+DLLEXPORT int nec2_add_load(WolframLibraryData libData, mint Argc, MArgument *Args, MArgument Res) {
+    mint ldtyp  = MArgument_getInteger(Args[0]);
+    mint ldtag  = MArgument_getInteger(Args[1]);
+    mint ldtagf = MArgument_getInteger(Args[2]);
+    mint ldtagt = MArgument_getInteger(Args[3]);
+    double zlr  = MArgument_getReal(Args[4]);
+    double zli  = MArgument_getReal(Args[5]);
+    double zlc  = MArgument_getReal(Args[6]);
+
+    int idx = zload.nload;
+    zload.nload++;
+
+    size_t ni = (size_t)zload.nload * sizeof(int);
+    size_t nd = (size_t)zload.nload * sizeof(double);
+    mem_realloc((void *)&ld_typ,  ni);
+    mem_realloc((void *)&ld_tag,  ni);
+    mem_realloc((void *)&ld_tagf, ni);
+    mem_realloc((void *)&ld_tagt, ni);
+    mem_realloc((void *)&ld_zlr,  nd);
+    mem_realloc((void *)&ld_zli,  nd);
+    mem_realloc((void *)&ld_zlc,  nd);
+
+    ld_typ[idx]  = (int)ldtyp;
+    ld_tag[idx]  = (int)ldtag;
+    ld_tagf[idx] = (int)ldtagf;
+    ld_tagt[idx] = (int)ldtagt;
+    ld_zlr[idx]  = zlr;
+    ld_zli[idx]  = zli;
+    ld_zlc[idx]  = zlc;
+
+    MArgument_setInteger(Res, 0);
+    return LIBRARY_NO_ERROR;
+}
+
 DLLEXPORT int nec2_execute(WolframLibraryData libData, mint Argc, MArgument *Args, MArgument Res) {
     complex double *cm = NULL;
     
@@ -332,7 +376,12 @@ DLLEXPORT int nec2_execute(WolframLibraryData libData, mint Argc, MArgument *Arg
         matpar.icase = 1;
         matpar.npblk = 1;
         matpar.nlast = netcx.npeq;
-        
+
+        /* Apply lumped loads (fills zload.zarray, added to the matrix diagonal
+           by cmset). Recomputed here each call so it tracks the frequency. */
+        if (zload.nload != 0)
+            load(ld_typ, ld_tag, ld_tagf, ld_tagt, ld_zlr, ld_zli, ld_zlc);
+
         cmset(netcx.neq, cm, rkh, iexk);
         factrs(netcx.npeq, netcx.neq, cm, save.ip);
         
