@@ -4,7 +4,7 @@ BeginPackage["ArnoudBuzing`AntennaLink`"]
 
 AntennaSolve::usage = "AntennaSolve[inputFile, outputFile] runs the NEC2 MoM solver on the given inputFile (.nec) and writes the results to outputFile (.out)."
 AntennaParseOutput::usage = "AntennaParseOutput[file] parses a NEC .out file into an Association containing Datasets."
-AntennaSolveMemory::usage = "AntennaSolveMemory[wires, freq, excitations] runs the NEC2 solver directly in memory, bypassing file I/O. The result includes \"Currents\" and an \"InputParameters\" Dataset giving the input impedance (ZInput), drive voltage, current, and power at each excited segment."
+AntennaSolveMemory::usage = "AntennaSolveMemory[wires, freq, excitations] runs the NEC2 solver directly in memory, bypassing file I/O. The result includes \"Currents\" and an \"InputParameters\" Dataset giving the input impedance (ZInput), drive voltage, current, and power at each excited segment. The \"Loads\" option adds lumped R/L/C or impedance loading to segments."
 AntennaFarFieldMemory::usage = "AntennaFarFieldMemory[wires, freq, excitations, thetaList, phiList] runs the NEC2 solver directly in memory and computes the far-field E-fields and gains for the specified list of theta and phi angles (in degrees). The result also includes an \"InputParameters\" Dataset with the input impedance at each excited segment."
 AntennaYagiUda::usage = "AntennaYagiUda[reflectorLength, reflectorSpacing, drivenLength, directorLengths, directorSpacings, wireRadius, segments] or AntennaYagiUda[assoc] creates a structured list of wire associations representing a Yagi-Uda antenna aligned along the Y-axis."
 AntennaHelix::usage = "AntennaHelix[radius, pitch, turns, wireRadius, segmentsPerTurn] or AntennaHelix[assoc] creates a structured list of wire associations representing a helical antenna along the Z-axis. Each wire is given a unique Tag (1 at the base), so any point can be addressed for excitation."
@@ -43,6 +43,7 @@ If[$LibraryFile =!= $Failed,
   nec2LinkFarField = LibraryFunctionLoad[$LibraryFile, "nec2_far_field", {{Real, 1}, {Real, 1}}, {Real, 2}];
   nec2LinkGetInputParameters = LibraryFunctionLoad[$LibraryFile, "nec2_get_input_parameters", {}, {Real, 2}];
   nec2LinkSetGround = LibraryFunctionLoad[$LibraryFile, "nec2_set_ground", {Integer, Integer, Real, Real, Real, Real}, Integer];
+  nec2LinkAddLoad = LibraryFunctionLoad[$LibraryFile, "nec2_add_load", {Integer, Integer, Integer, Integer, Real, Real, Real}, Integer];
 ]
 
 AntennaSolve[inputFile_String, outputFile_String] := Module[
@@ -72,6 +73,7 @@ General::nowires = "The wire list is empty; at least one wire is required.";
 General::badwire = "`1` is not a valid wire. Each wire must be an Association with an integer \"Segments\" > 0, an integer \"Tag\", three-element numeric \"P1\" and \"P2\", and a positive numeric \"Radius\".";
 General::badex = "`1` is not a valid excitation. Each excitation must be an Association with an integer \"Tag\", a positive integer \"Segment\", and a numeric (possibly complex) \"Voltage\".";
 General::missingkey = "Required key(s) `1` missing from the input association.";
+General::badload = "`1` is not a valid load. Each load must be an Association whose \"Type\" is one of Series, Parallel, SeriesPerMeter, ParallelPerMeter, Impedance, or Conductivity.";
 
 
 AntennaParseOutput[outFile_String] := Module[
@@ -168,7 +170,7 @@ groundConnectFlag[groundSpec_] :=
    wire geometry, set the frequency, configure ground, and apply excitations.
    Returns "OK" on success, or a status string naming the stage that failed.
    The caller is responsible for invoking nec2LinkExecute[] afterward. *)
-setupGeometry[wires_List, freq_?NumericQ, excitations_List, groundSpec_] := Module[
+setupGeometry[wires_List, freq_?NumericQ, excitations_List, groundSpec_, loads_List] := Module[
   {result},
 
   result = nec2LinkInit[];
@@ -204,6 +206,8 @@ setupGeometry[wires_List, freq_?NumericQ, excitations_List, groundSpec_] := Modu
     excitations
   ];
 
+  Scan[applyLoad, loads];
+
   "OK"
 ]
 
@@ -211,7 +215,7 @@ setupGeometry[wires_List, freq_?NumericQ, excitations_List, groundSpec_] := Modu
    Used by AntennaSweepMemory so the structure is built a single time and only
    the frequency-dependent steps (set_freq, ground, execute) repeat per point.
    Returns "OK" or a status string naming the failed stage. *)
-loadGeometryOnce[wires_List, excitations_List, groundSpec_] := Module[
+loadGeometryOnce[wires_List, excitations_List, groundSpec_, loads_List] := Module[
   {result},
 
   result = nec2LinkInit[];
@@ -232,8 +236,8 @@ loadGeometryOnce[wires_List, excitations_List, groundSpec_] := Module[
   result = nec2LinkGeometryEnd[groundConnectFlag[groundSpec]];
   If[result =!= 0, Return["GeometryEndFailed"]];
 
-  (* Excitations are frequency-independent (segment index + complex voltage),
-     so they are applied once here rather than per frequency. *)
+  (* Excitations and loads are frequency-independent registrations, applied once
+     here; the loads' impedance is recomputed per frequency inside the solver. *)
   Scan[
     Function[ex,
       nec2LinkSetExcitation[
@@ -243,6 +247,8 @@ loadGeometryOnce[wires_List, excitations_List, groundSpec_] := Module[
     ],
     excitations
   ];
+
+  Scan[applyLoad, loads];
 
   "OK"
 ]
@@ -283,22 +289,47 @@ validExcitationQ[e_Association] :=
   NumericQ[e["Voltage"]];
 validExcitationQ[_] := False;
 
-(* Validate the wire and excitation lists for the public function `sym`. On the
-   first invalid entry, issue a message against `sym` and return False;
+(* NEC LD-card type codes. *)
+$loadTypeCodes = <|
+  "Series" -> 0, "Parallel" -> 1,
+  "SeriesPerMeter" -> 2, "ParallelPerMeter" -> 3,
+  "Impedance" -> 4, "Conductivity" -> 5
+|>;
+
+validLoadQ[ld_Association] := KeyExistsQ[$loadTypeCodes, Lookup[ld, "Type", "Series"]];
+validLoadQ[_] := False;
+
+(* Register one validated lumped load with the solver. *)
+applyLoad[load_Association] := Module[{type, segF, segT, a, b, c},
+  type = Lookup[load, "Type", "Series"];
+  segF = Lookup[load, "SegmentFrom", 0];
+  segT = Lookup[load, "SegmentTo", 0];
+  {a, b, c} = Switch[type,
+    "Impedance",    {Lookup[load, "Resistance", 0.], Lookup[load, "Reactance", 0.], 0.},
+    "Conductivity", {Lookup[load, "Conductivity", 0.], 0., 0.},
+    _,              {Lookup[load, "Resistance", 0.], Lookup[load, "Inductance", 0.], Lookup[load, "Capacitance", 0.]}
+  ];
+  nec2LinkAddLoad[$loadTypeCodes[type], Lookup[load, "Tag", 0], segF, segT, N[a], N[b], N[c]]
+];
+
+(* Validate the wire, excitation, and load lists for the public function `sym`.
+   On the first invalid entry, issue a message against `sym` and return False;
    otherwise return True. *)
-validateSolverInputs[sym_, wires_List, excitations_List] := Module[{bad},
+validateSolverInputs[sym_, wires_List, excitations_List, loads_List] := Module[{bad},
   If[wires === {}, Message[MessageName[sym, "nowires"]]; Return[False]];
   bad = SelectFirst[wires, ! validWireQ[#] &, None];
   If[bad =!= None, Message[MessageName[sym, "badwire"], bad]; Return[False]];
   bad = SelectFirst[excitations, ! validExcitationQ[#] &, None];
   If[bad =!= None, Message[MessageName[sym, "badex"], bad]; Return[False]];
+  bad = SelectFirst[loads, ! validLoadQ[#] &, None];
+  If[bad =!= None, Message[MessageName[sym, "badload"], bad]; Return[False]];
   True
 ];
 
-Options[AntennaSolveMemory] = {"Ground" -> None};
+Options[AntennaSolveMemory] = {"Ground" -> None, "Loads" -> {}};
 
 AntennaSolveMemory[wires_List, freq_?NumericQ, excitations_List, opts:OptionsPattern[]] := Module[
-  {status, currentsTensor, currentData, groundSpec},
+  {status, currentsTensor, currentData, groundSpec, loads},
 
   If[$LibraryFile === $Failed,
     Message[AntennaSolve::nolib];
@@ -306,10 +337,11 @@ AntennaSolveMemory[wires_List, freq_?NumericQ, excitations_List, opts:OptionsPat
   ];
 
   groundSpec = OptionValue[AntennaSolveMemory, {opts}, "Ground"];
+  loads = OptionValue[AntennaSolveMemory, {opts}, "Loads"];
 
-  If[! validateSolverInputs[AntennaSolveMemory, wires, excitations], Return[$Failed]];
+  If[! validateSolverInputs[AntennaSolveMemory, wires, excitations, loads], Return[$Failed]];
 
-  status = setupGeometry[wires, freq, excitations, groundSpec];
+  status = setupGeometry[wires, freq, excitations, groundSpec, loads];
   If[status =!= "OK", Message[AntennaSolve::err, status]; Return[$Failed]];
 
   currentsTensor = nec2LinkExecute[];
@@ -327,10 +359,10 @@ AntennaSolveMemory[wires_List, freq_?NumericQ, excitations_List, opts:OptionsPat
   ]
 ]
 
-Options[AntennaFarFieldMemory] = {"Ground" -> None};
+Options[AntennaFarFieldMemory] = {"Ground" -> None, "Loads" -> {}};
 
 AntennaFarFieldMemory[wires_List, freq_?NumericQ, excitations_List, thetaList_List, phiList_List, opts:OptionsPattern[]] := Module[
-  {status, currentsTensor, currentsData, farFieldTensor, farFieldData, thetaRad, phiRad, groundSpec},
+  {status, currentsTensor, currentsData, farFieldTensor, farFieldData, thetaRad, phiRad, groundSpec, loads},
 
   If[$LibraryFile === $Failed,
     Message[AntennaSolve::nolib];
@@ -338,10 +370,11 @@ AntennaFarFieldMemory[wires_List, freq_?NumericQ, excitations_List, thetaList_Li
   ];
 
   groundSpec = OptionValue[AntennaFarFieldMemory, {opts}, "Ground"];
+  loads = OptionValue[AntennaFarFieldMemory, {opts}, "Loads"];
 
-  If[! validateSolverInputs[AntennaFarFieldMemory, wires, excitations], Return[$Failed]];
+  If[! validateSolverInputs[AntennaFarFieldMemory, wires, excitations, loads], Return[$Failed]];
 
-  status = setupGeometry[wires, freq, excitations, groundSpec];
+  status = setupGeometry[wires, freq, excitations, groundSpec, loads];
   If[status =!= "OK", Message[AntennaSolve::err, status]; Return[$Failed]];
 
   currentsTensor = nec2LinkExecute[];
@@ -519,10 +552,10 @@ AntennaParabolicReflector[focalLength_, dishRadius_, numRibs_, numRings_, wireRa
   wires
 ]
 
-Options[AntennaSweepMemory] = {"Ground" -> None, "ReferenceImpedance" -> 50.0};
+Options[AntennaSweepMemory] = {"Ground" -> None, "ReferenceImpedance" -> 50.0, "Loads" -> {}};
 
 AntennaSweepMemory[wires_List, freqSpec_, excitations_List, opts:OptionsPattern[]] := Module[
-  {freqList, z0, results, groundSpec, loadStatus},
+  {freqList, z0, results, groundSpec, loads, loadStatus},
 
   If[$LibraryFile === $Failed,
     Message[AntennaSolve::nolib];
@@ -531,8 +564,9 @@ AntennaSweepMemory[wires_List, freqSpec_, excitations_List, opts:OptionsPattern[
 
   z0 = OptionValue[AntennaSweepMemory, {opts}, "ReferenceImpedance"];
   groundSpec = OptionValue[AntennaSweepMemory, {opts}, "Ground"];
+  loads = OptionValue[AntennaSweepMemory, {opts}, "Loads"];
 
-  If[! validateSolverInputs[AntennaSweepMemory, wires, excitations], Return[$Failed]];
+  If[! validateSolverInputs[AntennaSweepMemory, wires, excitations, loads], Return[$Failed]];
 
   freqList = Switch[freqSpec,
     _List,
@@ -545,7 +579,7 @@ AntennaSweepMemory[wires_List, freqSpec_, excitations_List, opts:OptionsPattern[
   ];
   
   (* Build the structure once; only the frequency-dependent steps below repeat. *)
-  loadStatus = loadGeometryOnce[wires, excitations, groundSpec];
+  loadStatus = loadGeometryOnce[wires, excitations, groundSpec, loads];
   If[loadStatus =!= "OK",
     Return[Dataset[Table[<|"Frequency" -> f, "Error" -> loadStatus|>, {f, freqList}]]]
   ];
