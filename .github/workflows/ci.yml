@@ -53,12 +53,5 @@ jobs:
       - name: Build libnec2link
         run: wolframscript -file scripts/build.wl
 
-      - name: Diagnose (temporary)
-        run: |
-          echo "=== built library tree ==="
-          ls -R AntennaLink/LibraryResources || true
-          echo "=== kernel view ==="
-          wolframscript -code 'Print["SystemID=", $SystemID]; Print["DirLoad=", PacletDirectoryLoad[FileNameJoin[{Directory[], "AntennaLink"}]]]; Print["Find=", FindLibrary["libnec2link"]]; Print["OnPath=", FileExistsQ[FileNameJoin[{Directory[], "AntennaLink", "LibraryResources", $SystemID, "libnec2link.so"}]]]'
-
       - name: Run test suite
         run: wolframscript -file scripts/test.wl

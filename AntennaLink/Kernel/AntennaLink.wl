@@ -17,6 +17,20 @@ Begin["`Private`"]
 
 $LibraryFile = FindLibrary["libnec2link"];
 
+(* FindLibrary only succeeds when the paclet's LibraryResources directory is on
+   the library path, which is not guaranteed when the package is loaded directly
+   (e.g. via Get, or before the paclet is installed). Fall back to the library
+   bundled next to this package, under LibraryResources/$SystemID. *)
+If[$LibraryFile === $Failed && $InputFileName =!= "",
+  Module[{candidates},
+    candidates = FileNames[
+      "libnec2link.*",
+      FileNameJoin[{ParentDirectory[DirectoryName[ExpandFileName[$InputFileName]]], "LibraryResources", $SystemID}]
+    ];
+    If[candidates =!= {}, $LibraryFile = First[candidates]]
+  ]
+];
+
 If[$LibraryFile =!= $Failed,
   nec2LinkRun = LibraryFunctionLoad[$LibraryFile, "run_nec2", {String, String}, Integer];
   nec2LinkInit = LibraryFunctionLoad[$LibraryFile, "nec2_init", {}, Integer];
