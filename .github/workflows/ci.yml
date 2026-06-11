@@ -27,12 +27,13 @@ jobs:
 
     steps:
       # git must exist before checkout, otherwise actions/checkout falls back to
-      # the REST API tarball, which cannot fetch the nec2c submodule. gcc is
-      # needed later by CreateLibrary.
-      - name: Install build tools (git, gcc)
+      # the REST API tarball, which cannot fetch the nec2c submodule.
+      # build-essential provides gcc plus the libc development headers
+      # (stdint.h, complex.h, ...) that CreateLibrary needs to compile nec2c.
+      - name: Install build tools (git, build-essential)
         run: |
           apt-get update
-          apt-get install -y --no-install-recommends git gcc
+          apt-get install -y --no-install-recommends git build-essential
 
       - name: Check out repository (with nec2c submodule)
         uses: actions/checkout@v4
