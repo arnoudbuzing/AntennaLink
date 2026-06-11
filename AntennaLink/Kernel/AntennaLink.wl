@@ -12,6 +12,7 @@ AntennaParabolicReflector::usage = "AntennaParabolicReflector[focalLength, dishR
 AntennaSweepMemory::usage = "AntennaSweepMemory[wires, freqSpec, excitations] sweeps the frequencies given by freqSpec (a single frequency or an explicit list, e.g. Range[fmin, fmax, step]) to compute input impedance, S11, and VSWR in memory."
 AntennaPlotGeometry::usage = "AntennaPlotGeometry[wires] plots the 3D geometry of the antenna. AntennaPlotGeometry[solveResult] plots the geometry colored by computed segment currents."
 AntennaPlotPattern3D::usage = "AntennaPlotPattern3D[farFieldData] plots the 3D radiation pattern. AntennaPlotPattern3D[solveResult] plots the radiation pattern and overlays the physical antenna geometry at the center."
+AntennaPlotPattern2D::usage = "AntennaPlotPattern2D[farFieldData] or AntennaPlotPattern2D[solveResult] plots a 2D polar cut of the radiation pattern. Use \"Plane\" -> \"Elevation\" (a phi = const vertical cut, default) or \"Azimuth\" (a theta = const horizontal cut), and \"Angle\" to choose the fixed angle in degrees."
 
 Begin["`Private`"]
 
@@ -911,6 +912,90 @@ AntennaPlotPattern3D[input_, opts:OptionsPattern[]] := Module[
 
 AntennaPlotPattern3D::invalid = "The input `1` is not a valid far-field dataset or solved result association.";
 AntennaPlotPattern3D::grid = "The far field dataset must contain a 3D grid of angles with at least 2 distinct Theta and Phi values.";
+
+Options[AntennaPlotPattern2D] = {
+  "Plane" -> "Elevation",
+  "Angle" -> Automatic,
+  "PlotType" -> "dB",
+  "DynamicRange" -> 40.0
+};
+
+AntennaPlotPattern2D[input_, opts:OptionsPattern[]] := Module[
+  {farFieldData, plane, angleOpt, plotType, range, data, thetas, phis, gainAssoc,
+   valueKey, valueAt, maxDB, minDB, radiusOf, fixedPhi, fixedPhi2, fixedTheta,
+   pts, plotAngle, label},
+
+  (* Resolve input: a solved-result association, or the far-field dataset. *)
+  farFieldData = Switch[input,
+    _Association, Lookup[input, "FarField", None],
+    _, input
+  ];
+  If[farFieldData === None || MissingQ[farFieldData],
+    Message[AntennaPlotPattern2D::invalid, Defer[input]]; Return[$Failed]
+  ];
+
+  data = Normal[farFieldData];
+  If[! ListQ[data] || data === {} || ! AssociationQ[First[data]],
+    Message[AntennaPlotPattern2D::invalid, Defer[input]]; Return[$Failed]
+  ];
+
+  plane = OptionValue["Plane"];
+  angleOpt = OptionValue["Angle"];
+  plotType = OptionValue["PlotType"];
+  range = OptionValue["DynamicRange"];
+
+  thetas = Union[Lookup[data, "Theta"]];
+  phis = Union[Lookup[data, "Phi"]];
+
+  valueKey = If[plotType === "dB", "GainDB", "Gain"];
+  gainAssoc = AssociationThread[
+    Transpose[{Lookup[data, "Theta"], Lookup[data, "Phi"]}],
+    Lookup[data, valueKey]
+  ];
+  valueAt[th_, ph_] := Lookup[gainAssoc, Key[{th, ph}], Missing[]];
+
+  (* Radius mapping: in dB, shift so the peak sits at the rim and the floor
+     (peak - DynamicRange) sits at the center; linear gain is used directly. *)
+  maxDB = Max[Lookup[data, "GainDB"]];
+  minDB = maxDB - range;
+  radiusOf[v_] := Which[
+    MissingQ[v], 0.0,
+    plotType === "dB", Max[0.0, v - minDB],
+    True, Max[0.0, v]
+  ];
+
+  Switch[plane,
+    "Azimuth",
+      fixedTheta = First[Nearest[thetas, If[angleOpt === Automatic, 90.0, N[angleOpt]]]];
+      pts = Table[{ph Degree, radiusOf[valueAt[fixedTheta, ph]]}, {ph, phis}];
+      (* close the loop *)
+      If[pts =!= {}, pts = Append[pts, First[pts]]];
+      label = "Azimuth cut (\[Theta] = " <> ToString[fixedTheta] <> "\[Degree])",
+
+    _, (* "Elevation" *)
+      fixedPhi = First[Nearest[phis, If[angleOpt === Automatic, 0.0, N[angleOpt]]]];
+      fixedPhi2 = First[Nearest[phis, Mod[fixedPhi + 180.0, 360.0]]];
+      (* phi0 half-plane: +Z (theta=0) at top, sweeping to the fixedPhi side *)
+      pts = Table[{(90.0 - th) Degree, radiusOf[valueAt[th, fixedPhi]]}, {th, thetas}];
+      If[fixedPhi2 != fixedPhi,
+        pts = Join[pts,
+          Reverse@Table[{(90.0 + th) Degree, radiusOf[valueAt[th, fixedPhi2]]}, {th, thetas}]]
+      ];
+      If[pts =!= {}, pts = Append[pts, First[pts]]];
+      label = "Elevation cut (\[Phi] = " <> ToString[fixedPhi] <> "\[Degree])"
+  ];
+
+  ListPolarPlot[pts,
+    Joined -> True,
+    PlotRange -> All,
+    PolarAxes -> True,
+    PolarGridLines -> Automatic,
+    PlotStyle -> Directive[Thick, ColorData[97][1]],
+    PlotLabel -> label <> If[plotType === "dB", "  [dB, " <> ToString[range] <> " dB range]", "  [linear gain]"]
+  ]
+]
+
+AntennaPlotPattern2D::invalid = "The input `1` is not a valid far-field dataset or solved result association.";
 
 End[] (* `Private` *)
 

@@ -267,6 +267,23 @@ ff = AntennaFarFieldMemory[
 AntennaPlotPattern3D[ff, "ShowGeometry" -> True]
 ```
 
+### 2D Pattern Cuts (`AntennaPlotPattern2D`)
+Polar plot of a single principal-plane cut through the pattern — the everyday
+antenna-engineering view.
+
+```wolfram
+(* Elevation cut (a vertical, phi = const plane); default phi = 0 *)
+AntennaPlotPattern2D[ff, "Plane" -> "Elevation", "DynamicRange" -> 30.0]
+
+(* Azimuth cut (a horizontal, theta = const plane); default theta = 90 deg *)
+AntennaPlotPattern2D[ff, "Plane" -> "Azimuth", "Angle" -> 90.0]
+```
+
+Options: `"Plane"` (`"Elevation"` | `"Azimuth"`), `"Angle"` (fixed angle in
+degrees, `Automatic` by default), `"PlotType"` (`"dB"` | `"Linear"`), and
+`"DynamicRange"` (dB span from the peak, default `40`). Accepts either a solved
+result or a far-field dataset.
+
 ---
 
 ## Running the Unit Tests
