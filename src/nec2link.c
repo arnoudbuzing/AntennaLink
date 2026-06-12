@@ -399,9 +399,12 @@ DLLEXPORT int nec2_execute(WolframLibraryData libData, mint Argc, MArgument *Arg
         libData->MTensor_new(MType_Real, 2, dims, &tensor);
         double *tensor_data = libData->MTensor_getRealData(tensor);
         
+        /* crnt.cur is stored normalized; the physical current in amperes is
+           crnt.cur * wlam (NEC's print routines apply the same factor). Without
+           it, currents/impedances are wrong by f/CVEL away from ~300 MHz. */
         for (int i = 0; i < data.n; i++) {
-            tensor_data[i*5] = creal(crnt.cur[i]);
-            tensor_data[i*5 + 1] = cimag(crnt.cur[i]);
+            tensor_data[i*5] = creal(crnt.cur[i]) * data.wlam;
+            tensor_data[i*5 + 1] = cimag(crnt.cur[i]) * data.wlam;
             tensor_data[i*5 + 2] = data.x[i];
             tensor_data[i*5 + 3] = data.y[i];
             tensor_data[i*5 + 4] = data.z[i];
@@ -506,14 +509,15 @@ DLLEXPORT int nec2_get_input_parameters(WolframLibraryData libData, mint Argc, M
         complex double v = vsorc.vsant[i];
         complex double c = 0.0;
         if (seg_idx >= 0 && seg_idx < data.n) {
-            c = crnt.cur[seg_idx];
+            /* Physical current in amperes is crnt.cur * wlam (see nec2_execute). */
+            c = crnt.cur[seg_idx] * data.wlam;
         }
-        
+
         complex double z = 0.0;
         if (cabs(c) > 1e-20) {
             z = v / c;
         }
-        
+
         double pwr = 0.5 * creal(v * conj(c));
         
         out_data[i * 9] = tag;
