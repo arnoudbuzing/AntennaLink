@@ -11,7 +11,7 @@
             ,
             "Hash"
             ->
-            "ebf97e8dde7d6b99d226fda839315ad77e60de47ba01fc45c1982e4c67329010"
+            "3744bf34ccb43b39238ffa3f90701a23e7db36fc1e6dac9374486473d96f5dc3"
                 
         |>
         ,
@@ -24,7 +24,21 @@
             ,
             "Hash"
             ->
-            "1585d972ae1afdbf4ef5bec5ce05e2c66ffdb26f801d21dae6477f9d61a0e542"
+            "408453ec291384d3fcbf21b3b0f868701eaac3c09987cb0341aa2ddaa03a2d76"
+                
+        |>
+        ,
+        <|
+            "File"
+            ->
+            File[
+                "Documentation/English/Tutorials/IntroductiontoAntennas.nb"
+                    
+            ]
+            ,
+            "Hash"
+            ->
+            "47b04884ef7ddd8220248dc0ee1bf49102071db5de0a0519e8a36f6c13296bdb"
                 
         |>
     }

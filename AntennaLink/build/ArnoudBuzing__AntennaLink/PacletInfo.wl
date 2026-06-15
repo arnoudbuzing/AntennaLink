@@ -25,7 +25,8 @@ PacletObject[
           "ArnoudBuzing`AntennaLink`AntennaParabolicReflector",
           "ArnoudBuzing`AntennaLink`AntennaSweepMemory",
           "ArnoudBuzing`AntennaLink`AntennaPlotGeometry",
-          "ArnoudBuzing`AntennaLink`AntennaPlotPattern3D"
+          "ArnoudBuzing`AntennaLink`AntennaPlotPattern3D",
+          "ArnoudBuzing`AntennaLink`AntennaPlotPattern2D"
         }
       },
       {"LibraryLink"},
